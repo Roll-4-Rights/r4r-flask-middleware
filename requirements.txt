@@ -6,28 +6,3 @@ flask-cors==4.0.0
 flask-session==0.5.0
 psycopg2-binary==2.9.9
 Werkzeug==3.0.1
-
-
-
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_user_type ON users(user_type);
-
-# Flask Backend - Holds the secret token
-@app.route('/api/items', methods=['GET'])
-@login_required
-def get_items():
-    user_id = session['user_id']
-    
-    # Flask makes request to NocoDB with SECRET token
-    response = requests.get(
-        f'{NOCODB_URL}/api/v1/db/data/noco/{BASE_ID}/donation_items',
-        headers={'xc-auth': NOCODB_SECRET_TOKEN},  # Hidden from frontend!
-        params={'where': f'(user_id,eq,{user_id})'}
-    )
-    
-    return jsonify(response.json())
-
-# Frontend - NO TOKENS! ✅
-fetch('http://flask-api.azurewebsites.net/api/items', {
-  headers: { 'Authorization': 'Bearer user-session-token' }
-})
