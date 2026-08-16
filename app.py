@@ -26,17 +26,15 @@ Session(app)
 NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080') # this is the nocodb server URL, defaulting to localhost for local dev
 NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN') # this is the nocodb API token, which should be kept secret and not exposed to the frontend
 NOCODB_BASE_ID = os.environ.get('NOCODB_BASE_ID') # this is the main base ID for the R4R project in NocoDB
-NOCODB_CHAT_BASE_ID = os.environ.get('NOCODB_CHAT_BASE_ID', NOCODB_BASE_ID) # this is the base ID for the chat tables, defaulting to the main base if not set
-NOCODB_AUCTION_BASE_ID = os.environ.get('NOCODB_AUCTION_BASE_ID') # this is the base ID for the auction tables, defaulting to the main base if not set
-NOCODB_ITEMS_TABLE_ID = os.environ.get('NOCODB_ITEMS_TABLE_ID') # this is the table ID for the auction items table
-NOCODB_ANNOUNCEMENTS_TABLE_ID = os.environ.get('NOCODB_ANNOUNCEMENTS_TABLE_ID') # this is the table ID for the announcements table
-NOCODB_CAMPAIGN_TABLE_ID = os.getenv('NOCODB_CAMPAIGN_TABLE_ID') # this is the table ID for the campaign settings table
+# NOCODB_CHAT_BASE_ID = os.environ.get('NOCODB_CHAT_BASE_ID', NOCODB_BASE_ID) # this is the base ID for the chat tables, defaulting to the main base if not set
+# NOCODB_AUCTION_BASE_ID = os.environ.get('NOCODB_AUCTION_BASE_ID') # this is the base ID for the auction tables, defaulting to the main base if not set
+# NOCODB_ITEMS_TABLE_ID = os.environ.get('NOCODB_ITEMS_TABLE_ID') # this is the table ID for the auction items table
+# NOCODB_ANNOUNCEMENTS_TABLE_ID = os.environ.get('NOCODB_ANNOUNCEMENTS_TABLE_ID') # this is the table ID for the announcements table
+# NOCODB_CAMPAIGN_TABLE_ID = os.getenv('NOCODB_CAMPAIGN_TABLE_ID') # this is the table ID for the campaign settings table
 
 print("Flask Configuration:") # this is printed to the console for debugging purposes, but not exposed to the frontend
 print(f"   NocoDB URL: {NOCODB_URL}")
 print(f"   Main Base ID: {NOCODB_BASE_ID}")
-print(f"   Chat Base ID: {NOCODB_CHAT_BASE_ID}")
-print(f"   Auction Base ID: {NOCODB_AUCTION_BASE_ID}")
 print(f"   Token: {'Set' if NOCODB_TOKEN else 'Missing'}")
 
 
@@ -205,66 +203,63 @@ def table_record_operations(table_name, record_id):
     
 
 # ============= AUCTION ROUTES =============
+# Temporarily commented out - will enable when tables are created
 
-@app.route('/api/auction/items', methods=['GET'])
-def get_auction_items():
-    """Get all auction items"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_ITEMS_TABLE_ID}/records'
-        
-        response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
-        
-    except Exception as e:
-        app.logger.error(f"Get auction items error: {e}")
-        return jsonify({'error': str(e)}), 500
+# @app.route('/api/auction/items', methods=['GET'])
+# def get_auction_items():
+#     """Get all auction items"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN}
+#         url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_ITEMS_TABLE_ID}/records'
+#         
+#         response = requests.get(url, headers=headers, params=request.args)
+#         return jsonify(response.json()), response.status_code
+#         
+#     except Exception as e:
+#         app.logger.error(f"Get auction items error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/auction/items/<item_id>', methods=['GET'])
-def get_auction_item(item_id):
-    """Get a single auction item by ID"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_ITEMS_TABLE_ID}/records/{item_id}'
-        
-        response = requests.get(url, headers=headers)
-        return jsonify(response.json()), response.status_code
-        
-    except Exception as e:
-        app.logger.error(f"Get auction item error: {e}")
-        return jsonify({'error': str(e)}), 500
+# @app.route('/api/auction/items/<item_id>', methods=['GET'])
+# def get_auction_item(item_id):
+#     """Get a single auction item by ID"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN}
+#         url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_ITEMS_TABLE_ID}/records/{item_id}'
+#         
+#         response = requests.get(url, headers=headers)
+#         return jsonify(response.json()), response.status_code
+#         
+#     except Exception as e:
+#         app.logger.error(f"Get auction item error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/announcements', methods=['GET'])
-def get_announcements():
-    """Get all active announcements"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_ANNOUNCEMENTS_TABLE_ID}/records'
-        
-        response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
-        
-    except Exception as e:
-        app.logger.error(f"Get announcements error: {e}")
-        return jsonify({'error': str(e)}), 500
+# @app.route('/api/announcements', methods=['GET'])
+# def get_announcements():
+#     """Get all active announcements"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN}
+#         url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_ANNOUNCEMENTS_TABLE_ID}/records'
+#         
+#         response = requests.get(url, headers=headers, params=request.args)
+#         return jsonify(response.json()), response.status_code
+#         
+#     except Exception as e:
+#         app.logger.error(f"Get announcements error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/campaign', methods=['GET'])
-def get_campaign():
-    """Get current campaign settings (countdown, donate link, etc.)"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_CAMPAIGN_TABLE_ID}/records'
-        
-        response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
-        
-    except Exception as e:
-        app.logger.error(f"Get campaign error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-
-
+# @app.route('/api/campaign', methods=['GET'])
+# def get_campaign():
+#     """Get current campaign settings (countdown, donate link, etc.)"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN}
+#         url = f'{NOCODB_URL}/api/v2/tables/{NOCODB_CAMPAIGN_TABLE_ID}/records'
+#         
+#         response = requests.get(url, headers=headers, params=request.args)
+#         return jsonify(response.json()), response.status_code
+#         
+#     except Exception as e:
+#         app.logger.error(f"Get campaign error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
 # ============= CHAT ROUTES =============
 
