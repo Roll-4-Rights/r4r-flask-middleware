@@ -58,10 +58,7 @@ def health_check():
             'status': 'healthy',
             'flask': 'running',
             'nocodb': nocodb_status,
-            'bases': {
-                'main': NOCODB_BASE_ID,
-                'chat': NOCODB_CHAT_BASE_ID
-            }
+            'base_id': NOCODB_BASE_ID
         }), 200
     except Exception as e:
         return jsonify({
@@ -262,60 +259,61 @@ def table_record_operations(table_name, record_id):
 #         return jsonify({'error': str(e)}), 500
 
 # ============= CHAT ROUTES =============
+# Temporarily commented out - will enable when chat base is created
 
-@app.route('/api/chat/user-messages', methods=['GET', 'POST'])
-def user_chat_messages():
-    """Get or create user chat messages"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_CHAT_BASE_ID}/UserChatMessages'
-        
-        if request.method == 'GET':
-            response = requests.get(url, headers=headers, params=request.args)
-        else:  # POST
-            response = requests.post(url, headers=headers, json=request.json)
-        
-        return jsonify(response.json()), response.status_code
-        
-    except Exception as e:
-        app.logger.error(f"User chat error: {e}")
-        return jsonify({'error': str(e)}), 500
+# @app.route('/api/chat/user-messages', methods=['GET', 'POST'])
+# def user_chat_messages():
+#     """Get or create user chat messages"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+#         url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_CHAT_BASE_ID}/UserChatMessages'
+#         
+#         if request.method == 'GET':
+#             response = requests.get(url, headers=headers, params=request.args)
+#         else:  # POST
+#             response = requests.post(url, headers=headers, json=request.json)
+#         
+#         return jsonify(response.json()), response.status_code
+#         
+#     except Exception as e:
+#         app.logger.error(f"User chat error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/chat/admin-team', methods=['GET', 'POST'])
-def admin_team_messages():
-    """Get or create admin team messages"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_CHAT_BASE_ID}/AdminTeamMessages'
-        
-        if request.method == 'GET':
-            response = requests.get(url, headers=headers, params=request.args)
-        else:  # POST
-            response = requests.post(url, headers=headers, json=request.json)
-        
-        return jsonify(response.json()), response.status_code
-        
-    except Exception as e:
-        app.logger.error(f"Admin team chat error: {e}")
-        return jsonify({'error': str(e)}), 500
+# @app.route('/api/chat/admin-team', methods=['GET', 'POST'])
+# def admin_team_messages():
+#     """Get or create admin team messages"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+#         url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_CHAT_BASE_ID}/AdminTeamMessages'
+#         
+#         if request.method == 'GET':
+#             response = requests.get(url, headers=headers, params=request.args)
+#         else:  # POST
+#             response = requests.post(url, headers=headers, json=request.json)
+#         
+#         return jsonify(response.json()), response.status_code
+#         
+#     except Exception as e:
+#         app.logger.error(f"Admin team chat error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/chat/admin-dm', methods=['GET', 'POST'])
-def admin_dm_messages():
-    """Get or create admin DM messages"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_CHAT_BASE_ID}/AdminDMMessages'
-        
-        if request.method == 'GET':
-            response = requests.get(url, headers=headers, params=request.args)
-        else:  # POST
-            response = requests.post(url, headers=headers, json=request.json)
-        
-        return jsonify(response.json()), response.status_code
-        
-    except Exception as e:
-        app.logger.error(f"Admin DM error: {e}")
-        return jsonify({'error': str(e)}), 500
+# @app.route('/api/chat/admin-dm', methods=['GET', 'POST'])
+# def admin_dm_messages():
+#     """Get or create admin DM messages"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+#         url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_CHAT_BASE_ID}/AdminDMMessages'
+#         
+#         if request.method == 'GET':
+#             response = requests.get(url, headers=headers, params=request.args)
+#         else:  # POST
+#             response = requests.post(url, headers=headers, json=request.json)
+#         
+#         return jsonify(response.json()), response.status_code
+#         
+#     except Exception as e:
+#         app.logger.error(f"Admin DM error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
 # ============= FILE UPLOAD =============
 
