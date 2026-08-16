@@ -1,7 +1,7 @@
 # imports
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify  # Remove 'session' for now
 from flask_cors import CORS
-from flask_session import Session
+# from flask_session import Session  # Comment out
 import requests
 import os
 from dotenv import load_dotenv
@@ -11,16 +11,16 @@ load_dotenv()
 # create the Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
-app.config['SESSION_TYPE'] = 'filesystem'
+# app.config['SESSION_TYPE'] = 'filesystem'  # Comment out
 
 # configure CORS to allow requests from the frontend
 CORS(app, supports_credentials=True, origins=[
-    'http://localhost:5173', # Vite dev server
-    'http://localhost:5174', # Another Vite dev server
-    'http://localhost:3000', # React dev server
-    'http://localhost:3001'  # Another React dev server
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'http://localhost:3001'
 ])
-Session(app)
+# Session(app)  # Comment out
 
 # NocoDB credentials (HIDDEN from frontend!)
 NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080') # this is the nocodb server URL, defaulting to localhost for local dev
