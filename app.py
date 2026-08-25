@@ -82,6 +82,28 @@ def require_api_key(f):
     return decorated
 
 
+def require_donator_auth(f):
+    """Require a valid donator JWT (Authorization: Bearer <token>)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Missing or invalid Authorization header'}), 401
+
+        token = auth_header.split(' ', 1)[1]
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired, please log in again'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        request.donator_id = payload['donator_id']
+        request.donator_email = payload['email']
+        return f(*args, **kwargs)
+    return decorated
+
+
 def validate_table(table_name):
     """Only allow access to known/expected tables via generic routes."""
     return table_name in ALLOWED_TABLES
@@ -183,6 +205,15 @@ def login_donator():
     except Exception as e:
         app.logger.error(f"Login error: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/me', methods=['GET'])
+@require_donator_auth
+def get_current_donator():
+    """TEMPORARY test route - proves the token/decorator works. Returns whoever is logged in."""
+    return jsonify({
+        'donator_id': request.donator_id,
+        'email': request.donator_email
+    }), 200
 
 # ============= DONATIONS ROUTES =============
 
