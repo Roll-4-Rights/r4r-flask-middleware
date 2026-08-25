@@ -1,10 +1,11 @@
 # imports
-from flask import Flask, request, jsonify  # Remove 'session' for now
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-# from flask_session import Session  # Comment out
+from functools import wraps
 import requests
 import os
 from dotenv import load_dotenv
+from db import get_db_connection
 
 load_dotenv()
 
