@@ -5,13 +5,16 @@ from functools import wraps
 import requests
 import os
 from dotenv import load_dotenv
-from db import get_db_connection
+from db import get_db_connection, init_donators_table
 
 load_dotenv()
 
 # create the Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+
+# Ensure the donators table exists (separate from NocoDB, not visible in its UI)
+init_donators_table()
 
 # ============= ENVIRONMENT CONFIG =============
 
