@@ -156,6 +156,34 @@ def register_donator():
         app.logger.error(f"Register error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/auth/login', methods=['POST'])
+def login_donator():
+    """Log in an existing donator"""
+    try:
+        data = request.json or {}
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+
+        if not email or not password:
+            return jsonify({'error': 'Email and password are required'}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, password_hash FROM donators WHERE email = %s", (email,))
+        donator = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not donator or not check_password_hash(donator['password_hash'], password):
+            return jsonify({'error': 'Invalid email or password'}), 401
+
+        token = generate_token(donator['id'], email)
+        return jsonify({'token': token, 'name': donator['name'], 'email': email}), 200
+
+    except Exception as e:
+        app.logger.error(f"Login error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # ============= DONATIONS ROUTES =============
 
 @app.route('/api/donations', methods=['GET'])
