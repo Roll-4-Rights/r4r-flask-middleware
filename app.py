@@ -491,20 +491,6 @@ def internal_error(error):
     app.logger.error(f"Internal error: {error}")
     return jsonify({'error': 'Internal server error'}), 500
 
-@app.route('/api/test-db', methods=['GET'])
-def test_db():
-    """TEMPORARY — confirms direct Postgres connection works. Remove after testing."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT version();")
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
-        return jsonify({'status': 'connected', 'postgres_version': result}), 200
-    except Exception as e:
-        return jsonify({'status': 'failed', 'error': str(e)}), 500
-
 if __name__ == '__main__':
     debug_mode = FLASK_ENV == 'development'
 
