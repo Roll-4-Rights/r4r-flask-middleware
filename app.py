@@ -2,8 +2,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import os
+import jwt
+import datetime
 from dotenv import load_dotenv
 from db import get_db_connection, init_donators_table
 
@@ -15,6 +18,16 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 
 # Ensure the donators table exists (separate from NocoDB, not visible in its UI)
 init_donators_table()
+
+JWT_SECRET = os.environ.get('JWT_SECRET', app.config['SECRET_KEY'])
+
+def generate_token(donator_id, email):
+    payload = {
+        'donator_id': donator_id,
+        'email': email,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
 # ============= ENVIRONMENT CONFIG =============
 
@@ -100,6 +113,48 @@ def health_check():
             'status': 'unhealthy',
             'error': str(e)
         }), 500
+
+# ============= DONATOR AUTH ROUTES =============
+
+@app.route('/api/auth/register', methods=['POST'])
+def register_donator():
+    """Register a new donator account"""
+    try:
+        data = request.json or {}
+        name = data.get('name', '').strip()
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+
+        if not name or not email or not password:
+            return jsonify({'error': 'Name, email, and password are required'}), 400
+        if len(password) < 8:
+            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT id FROM donators WHERE email = %s", (email,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'An account with this email already exists'}), 409
+
+        password_hash = generate_password_hash(password)
+        cur.execute(
+            "INSERT INTO donators (name, email, password_hash) VALUES (%s, %s, %s) RETURNING id",
+            (name, email, password_hash)
+        )
+        new_id = cur.fetchone()['id']
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        token = generate_token(new_id, email)
+        return jsonify({'token': token, 'name': name, 'email': email}), 201
+
+    except Exception as e:
+        app.logger.error(f"Register error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ============= DONATIONS ROUTES =============
 
