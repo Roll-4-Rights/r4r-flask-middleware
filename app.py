@@ -129,12 +129,12 @@ def health_check():
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         response = requests.get(
-            f'{NOCODB_URL}/api/v1/db/meta/projects',
+            f'{NOCODB_URL}/api/v2/meta/bases/{NOCODB_DONATOR_BASE_ID}/tables',
             headers=headers,
             timeout=5
         )
 
-        nocodb_status = 'connected' if response.status_code == 200 else 'error'
+        nocodb_status = 'connected' if response.status_code == 200 else f'error ({response.status_code})'
 
         return jsonify({
             'status': 'healthy',
