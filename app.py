@@ -1,14 +1,13 @@
 # imports
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import os
-import jwt
-import datetime
 from dotenv import load_dotenv
-from db import get_db_connection, init_donators_table
+from db import get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email
 
 load_dotenv()
 
@@ -16,24 +15,18 @@ load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 
+# Session cookie config — required for cross-subdomain cookies over HTTPS
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+
 # Ensure the donators table exists (separate from NocoDB, not visible in its UI)
 init_donators_table()
-
-JWT_SECRET = os.environ.get('JWT_SECRET', app.config['SECRET_KEY'])
-
-def generate_token(donator_id, email):
-    payload = {
-        'donator_id': donator_id,
-        'email': email,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
 # ============= ENVIRONMENT CONFIG =============
 
 FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
 
-# configure CORS to allow requests from the frontend (env-driven, no hardcoded localhost in prod)
 ALLOWED_ORIGINS = os.environ.get(
     'ALLOWED_ORIGINS',
     'http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:3001'
@@ -41,16 +34,59 @@ ALLOWED_ORIGINS = os.environ.get(
 
 CORS(app, supports_credentials=True, origins=ALLOWED_ORIGINS)
 
+# ============= FLASK-LOGIN SETUP =============
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+
+class Donator(UserMixin):
+    def __init__(self, id, name, email):
+        self.id = id
+        self.name = name
+        self.email = email
+
+    def get_id(self):
+        return str(self.id)
+
+
+@login_manager.user_loader
+def load_user(donator_id):
+    row = get_donator_by_id(donator_id)
+    if not row:
+        return None
+    return Donator(row['id'], row['name'], row['email'])
+
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    return jsonify({'error': 'Login required'}), 401
+
+
+def csrf_protect(f):
+    """
+    Verify the request's Origin header is one of our known frontends before
+    allowing a state-changing (cookie-authenticated) request through.
+    Session cookies are auto-attached cross-site (SameSite=None), so this
+    replaces the CSRF protection that bearer tokens got "for free".
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        origin = request.headers.get('Origin', '')
+        if origin not in ALLOWED_ORIGINS:
+            app.logger.warning(f"Blocked request with untrusted Origin: {origin!r}")
+            return jsonify({'error': 'Untrusted origin'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 # NocoDB credentials (HIDDEN from frontend!)
 NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080')
 NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN')
 
-# Kept for reference/health check only — actual record operations use table IDs below
 NOCODB_DONATOR_BASE_ID = os.environ.get('NOCODB_DONATOR_BASE_ID')
 NOCODB_AUCTION_BASE_ID = os.environ.get('NOCODB_AUCTION_BASE_ID')
 
-# NocoDB v2 records API requires table IDs, not table names.
-# These are stable once created — get them via scripts/get_table_ids.py if they ever change.
 TABLE_IDS = {
     'Donations and Tracking': 'mxe1093xcatdwzr',
     'Public Calendar': 'm2pcy5vvdir11qr',
@@ -62,7 +98,6 @@ TABLE_IDS = {
 }
 ALLOWED_TABLES = list(TABLE_IDS.keys())
 
-# API key required for write operations (POST/PATCH/DELETE)
 MIDDLEWARE_API_KEY = os.environ.get('MIDDLEWARE_API_KEY')
 
 print("Flask Configuration:")
@@ -76,16 +111,15 @@ print(f"   API Key protection: {'Enabled' if MIDDLEWARE_API_KEY else 'DISABLED (
 
 
 def nocodb_records_url(table_name, record_id=None):
-    """Build a v2 records API URL for a given logical table name."""
     table_id = TABLE_IDS[table_name]
     base = f'{NOCODB_URL}/api/v2/tables/{table_id}/records'
     return f'{base}/{record_id}' if record_id else base
 
 
-# ============= AUTH DECORATOR =============
+# ============= API KEY DECORATOR (unchanged — admin routes still use this) =============
 
 def require_api_key(f):
-    """Require a valid X-API-Key header for write operations."""
+    """Require a valid X-API-Key header for admin write operations."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if not MIDDLEWARE_API_KEY:
@@ -100,30 +134,7 @@ def require_api_key(f):
     return decorated
 
 
-def require_donator_auth(f):
-    """Require a valid donator JWT (Authorization: Bearer <token>)."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid Authorization header'}), 401
-
-        token = auth_header.split(' ', 1)[1]
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token expired, please log in again'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'error': 'Invalid token'}), 401
-
-        request.donator_id = payload['donator_id']
-        request.donator_email = payload['email']
-        return f(*args, **kwargs)
-    return decorated
-
-
 def validate_table(table_name):
-    """Only allow access to known/expected tables via generic routes."""
     return table_name in ALLOWED_TABLES
 
 
@@ -158,8 +169,9 @@ def health_check():
 # ============= DONATOR AUTH ROUTES =============
 
 @app.route('/api/auth/register', methods=['POST'])
+@csrf_protect
 def register_donator():
-    """Register a new donator account"""
+    """Register a new donator account and start a session"""
     try:
         data = request.json or {}
         name = data.get('name', '').strip()
@@ -190,16 +202,18 @@ def register_donator():
         cur.close()
         conn.close()
 
-        token = generate_token(new_id, email)
-        return jsonify({'token': token, 'name': name, 'email': email}), 201
+        login_user(Donator(new_id, name, email), remember=True)
+        return jsonify({'name': name, 'email': email}), 201
 
     except Exception as e:
         app.logger.error(f"Register error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/auth/login', methods=['POST'])
+@csrf_protect
 def login_donator():
-    """Log in an existing donator"""
+    """Log in an existing donator and start a session"""
     try:
         data = request.json or {}
         email = data.get('email', '').strip().lower()
@@ -208,36 +222,41 @@ def login_donator():
         if not email or not password:
             return jsonify({'error': 'Email and password are required'}), 400
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT id, name, password_hash FROM donators WHERE email = %s", (email,))
-        donator = cur.fetchone()
-        cur.close()
-        conn.close()
+        donator = get_donator_by_email(email)
 
         if not donator or not check_password_hash(donator['password_hash'], password):
             return jsonify({'error': 'Invalid email or password'}), 401
 
-        token = generate_token(donator['id'], email)
-        return jsonify({'token': token, 'name': donator['name'], 'email': email}), 200
+        login_user(Donator(donator['id'], donator['name'], email), remember=True)
+        return jsonify({'name': donator['name'], 'email': email}), 200
 
     except Exception as e:
         app.logger.error(f"Login error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/auth/logout', methods=['POST'])
+@login_required
+@csrf_protect
+def logout_donator():
+    logout_user()
+    return jsonify({'message': 'Logged out'}), 200
+
+
 @app.route('/api/auth/me', methods=['GET'])
-@require_donator_auth
+@login_required
 def get_current_donator():
     """Get the currently logged-in donator's info (used by frontend to check login state)"""
     return jsonify({
-        'donator_id': request.donator_id,
-        'email': request.donator_email
+        'donator_id': current_user.id,
+        'email': current_user.email
     }), 200
+
 
 # ============= DONATIONS ROUTES =============
 
 @app.route('/api/donations', methods=['GET'])
-@require_donator_auth
+@login_required
 def get_donations():
     """Get donations belonging to the logged-in donator"""
     try:
@@ -245,7 +264,7 @@ def get_donations():
         url = nocodb_records_url('Donations and Tracking')
 
         params = dict(request.args)
-        params['where'] = f"(Donator Email,eq,{request.donator_email})"
+        params['where'] = f"(Donator Email,eq,{current_user.email})"
 
         response = requests.get(url, headers=headers, params=params)
         return jsonify(response.json()), response.status_code
@@ -254,15 +273,15 @@ def get_donations():
         app.logger.error(f"Get donations error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/donations', methods=['POST'])
-@require_donator_auth
+@login_required
+@csrf_protect
 def create_donation():
-    """Create a new donation (must be logged in — donator identity comes from JWT, not the request body)"""
+    """Create a new donation (must be logged in — donator identity comes from session, not the request body)"""
     try:
         data = request.json or {}
-
-        # Ignore any client-supplied identity fields — always trust the verified JWT
-        data['Donator Email'] = request.donator_email
+        data['Donator Email'] = current_user.email
 
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
         url = nocodb_records_url('Donations and Tracking')
@@ -274,8 +293,9 @@ def create_donation():
         app.logger.error(f"Create donation error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/donations/<record_id>', methods=['GET'])
-@require_donator_auth
+@login_required
 def get_donation(record_id):
     """Get a specific donation — only if it belongs to the logged-in donator"""
     try:
@@ -285,7 +305,7 @@ def get_donation(record_id):
 
         if response.status_code == 200:
             record = response.json()
-            if record.get('Donator Email') != request.donator_email:
+            if record.get('Donator Email') != current_user.email:
                 return jsonify({'error': 'Not found'}), 404
 
         return jsonify(response.json()), response.status_code
@@ -293,28 +313,28 @@ def get_donation(record_id):
         app.logger.error(f"Get donation error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/donations/<record_id>', methods=['PATCH', 'DELETE'])
-@require_donator_auth
+@login_required
+@csrf_protect
 def donation_write_operations(record_id):
     """Update or delete a specific donation — only if it belongs to the logged-in donator"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
 
-        # Verify ownership before allowing any write
         get_url = nocodb_records_url('Donations and Tracking', record_id)
         existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
-        if existing.status_code != 200 or existing.json().get('Donator Email') != request.donator_email:
+        if existing.status_code != 200 or existing.json().get('Donator Email') != current_user.email:
             return jsonify({'error': 'Not found'}), 404
 
         list_url = nocodb_records_url('Donations and Tracking')
 
         if request.method == 'PATCH':
             body = {**(request.json or {}), 'Id': int(record_id)}
-            # Donators can't reassign ownership or self-approve their own item
             body.pop('Donator Email', None)
             body.pop('Auction Status', None)
             response = requests.patch(list_url, headers=headers, json=body)
-        else:  # DELETE
+        else:
             body = {'Id': int(record_id)}
             response = requests.delete(list_url, headers=headers, json=body)
 

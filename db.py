@@ -29,3 +29,24 @@ def init_donators_table():
     conn.commit()
     cur.close()
     conn.close()
+
+def get_donator_by_id(donator_id):
+    """Fetch a donator by primary key — used by Flask-Login's user_loader."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email FROM donators WHERE id = %s", (donator_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def get_donator_by_email(email):
+    """Fetch a donator (with password_hash) by email — used at login."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email, password_hash FROM donators WHERE email = %s", (email,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
