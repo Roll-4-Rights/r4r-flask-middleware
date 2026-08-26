@@ -294,19 +294,29 @@ def get_donation(record_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/donations/<record_id>', methods=['PATCH', 'DELETE'])
-@require_api_key
+@require_donator_auth
 def donation_write_operations(record_id):
-    """Update or delete a specific donation"""
+    """Update or delete a specific donation — only if it belongs to the logged-in donator"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = nocodb_records_url('Donations and Tracking')
+
+        # Verify ownership before allowing any write
+        get_url = nocodb_records_url('Donations and Tracking', record_id)
+        existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
+        if existing.status_code != 200 or existing.json().get('Donator Email') != request.donator_email:
+            return jsonify({'error': 'Not found'}), 404
+
+        list_url = nocodb_records_url('Donations and Tracking')
 
         if request.method == 'PATCH':
             body = {**(request.json or {}), 'Id': int(record_id)}
-            response = requests.patch(url, headers=headers, json=body)
+            # Donators can't reassign ownership or self-approve their own item
+            body.pop('Donator Email', None)
+            body.pop('Auction Status', None)
+            response = requests.patch(list_url, headers=headers, json=body)
         else:  # DELETE
             body = {'Id': int(record_id)}
-            response = requests.delete(url, headers=headers, json=body)
+            response = requests.delete(list_url, headers=headers, json=body)
 
         return jsonify(response.json()), response.status_code
 
