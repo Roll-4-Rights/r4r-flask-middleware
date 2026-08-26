@@ -605,6 +605,35 @@ def get_campaign_progress():
         app.logger.error(f"Get campaign progress error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/campaign-info', methods=['GET'])
+def get_campaign_info():
+    """
+    Public, read-only campaign metadata (name, tagline, charity info, dates).
+    Admins update this directly in NocoDB whenever a new auction/campaign starts --
+    no app deploy required to change campaigns, including swapping the charity link.
+    """
+    try:
+        headers = {'xc-token': NOCODB_TOKEN}
+        settings_resp = requests.get(nocodb_records_url('Campaign Settings'), headers=headers)
+        settings_data = settings_resp.json()
+        records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
+        settings = records[0] if records else {}
+
+        return jsonify({
+            'name': settings.get('Campaign Name', ''),
+            'tagline': settings.get('Tagline', ''),
+            'charityName': settings.get('Charity Name', ''),
+            'charityLogoUrl': settings.get('Charity Logo URL', ''),
+            'charityWebsite': settings.get('Charity Website', ''),
+            'charityDescription': settings.get('Charity Description', ''),
+            'startDate': settings.get('Start Date', ''),
+            'endDate': settings.get('End Date', '')
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Get campaign info error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # ============= GENERIC TABLE ROUTES (allowlisted) =============
 
 @app.route('/api/tables/<table_name>', methods=['GET'])
