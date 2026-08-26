@@ -686,52 +686,58 @@ def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/donator-profile', methods=['GET'])
+@login_required
 def get_donator_profile():
-    """Get the current donator's profile"""
-    return jsonify({
-        'donator_id': current_user.id,
-        'name': current_user.name,
-        'email': current_user.email
-    }), 200
-
-@app.route('/api/donator-profile', methods=['POST'])
-def upsert_donator_profile():
-    """Create or update a donator profile"""
+    """Fetch the logged-in donator's profile from NocoDB, if they've submitted one before."""
     try:
-        data = request.json or {}
-        name = data.get('name', '').strip()
-        email = data.get('email', '').strip().lower()
-        password = data.get('password', '')
+        headers = {'xc-token': NOCODB_TOKEN}
+        url = nocodb_records_url('Donator Profiles')
+        params = {'where': f"(Donator Email,eq,{current_user.email})"}
 
-        if not name or not email or not password:
-            return jsonify({'error': 'Name, email, and password are required'}), 400
-        if len(password) < 8:
-            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("SELECT id FROM donators WHERE email = %s", (email,))
-        if cur.fetchone():
-            cur.close()
-            conn.close()
-            return jsonify({'error': 'An account with this email already exists'}), 409
-
-        password_hash = generate_password_hash(password)
-        cur.execute(
-            "INSERT INTO donators (name, email, password_hash) VALUES (%s, %s, %s) RETURNING id",
-            (name, email, password_hash)
-        )
-        new_id = cur.fetchone()['id']
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        login_user(Donator(new_id, name, email), remember=True)
-        return jsonify({'name': name, 'email': email}), 201
+        return jsonify(records[0] if records else None), 200
 
     except Exception as e:
-        app.logger.error(f"Register error: {e}")
+        app.logger.error(f"Get donator profile error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/donator-profile', methods=['POST'])
+@login_required
+@csrf_protect
+def upsert_donator_profile():
+    """
+    Create or update the logged-in donator's profile in NocoDB.
+    Donators are allowed to resubmit as many times as needed (e.g. fixing a typo) —
+    this overwrites their existing profile rather than blocking a second submission.
+    """
+    try:
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+        url = nocodb_records_url('Donator Profiles')
+
+        existing = requests.get(
+            url, headers={'xc-token': NOCODB_TOKEN},
+            params={'where': f"(Donator Email,eq,{current_user.email})"}
+        )
+        existing_data = existing.json()
+        existing_records = existing_data.get('list', []) if isinstance(existing_data, dict) else existing_data
+
+        data = request.json or {}
+        data['Donator Email'] = current_user.email
+
+        if existing_records:
+            data['Id'] = existing_records[0]['Id']
+            response = requests.patch(url, headers=headers, json=data)
+        else:
+            response = requests.post(url, headers=headers, json=data)
+
+        return jsonify(response.json()), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Upsert donator profile error: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
