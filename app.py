@@ -45,26 +45,25 @@ CORS(app, supports_credentials=True, origins=ALLOWED_ORIGINS)
 NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080')
 NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN')
 
-# Split by base — donator-base holds donations/calendar/announcements/campaign,
-# auction-base holds auction items + bids
+# Kept for reference/health check only — actual record operations use table IDs below
 NOCODB_DONATOR_BASE_ID = os.environ.get('NOCODB_DONATOR_BASE_ID')
 NOCODB_AUCTION_BASE_ID = os.environ.get('NOCODB_AUCTION_BASE_ID')
 
+# NocoDB v2 records API requires table IDs, not table names.
+# These are stable once created — get them via scripts/get_table_ids.py if they ever change.
+TABLE_IDS = {
+    'Donations and Tracking': 'mvfbfkw4tndofk7',
+    'Public Calendar': 'm2pcy5vvdir11qr',
+    'Team Calendar': 'm7d9kcnaqabtihu',
+    'Announcements': 'muop1f8mhgos6uy',
+    'Campaign Settings': 'mf0h6hpznxy4v1g',
+    'Auction Items': 'm02kvrs08uiij89',
+    'Bids': 'mw3pqffp5qhrrjj',
+}
+ALLOWED_TABLES = list(TABLE_IDS.keys())
+
 # API key required for write operations (POST/PATCH/DELETE)
 MIDDLEWARE_API_KEY = os.environ.get('MIDDLEWARE_API_KEY')
-
-# Allowlist of tables the generic /api/tables/<table_name> routes can touch,
-# mapped to which base they live in
-TABLE_BASE_MAP = {
-    'Donations and Tracking': NOCODB_DONATOR_BASE_ID,
-    'Public Calendar': NOCODB_DONATOR_BASE_ID,
-    'Team Calendar': NOCODB_DONATOR_BASE_ID,
-    'Announcements': NOCODB_DONATOR_BASE_ID,
-    'Campaign Settings': NOCODB_DONATOR_BASE_ID,
-    'Auction Items': NOCODB_AUCTION_BASE_ID,
-    'Bids': NOCODB_AUCTION_BASE_ID,
-}
-ALLOWED_TABLES = list(TABLE_BASE_MAP.keys())
 
 print("Flask Configuration:")
 print(f"   Environment: {FLASK_ENV}")
@@ -74,6 +73,13 @@ print(f"   Auction Base ID: {NOCODB_AUCTION_BASE_ID}")
 print(f"   Token: {'Set' if NOCODB_TOKEN else 'Missing'}")
 print(f"   Allowed Origins: {ALLOWED_ORIGINS}")
 print(f"   API Key protection: {'Enabled' if MIDDLEWARE_API_KEY else 'DISABLED (no key set!)'}")
+
+
+def nocodb_records_url(table_name, record_id=None):
+    """Build a v2 records API URL for a given logical table name."""
+    table_id = TABLE_IDS[table_name]
+    base = f'{NOCODB_URL}/api/v2/tables/{table_id}/records'
+    return f'{base}/{record_id}' if record_id else base
 
 
 # ============= AUTH DECORATOR =============
@@ -228,14 +234,14 @@ def get_current_donator():
         'email': request.donator_email
     }), 200
 
-# ============= DONATIONS ROUTES (donator-base) =============
+# ============= DONATIONS ROUTES =============
 
 @app.route('/api/donations', methods=['GET'])
 def get_donations():
     """Get all donations"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Donations and Tracking'
+        url = nocodb_records_url('Donations and Tracking')
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -250,7 +256,7 @@ def create_donation():
     """Create a new donation"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Donations and Tracking'
+        url = nocodb_records_url('Donations and Tracking')
 
         response = requests.post(url, headers=headers, json=request.json)
         return jsonify(response.json()), response.status_code
@@ -264,7 +270,7 @@ def get_donation(record_id):
     """Get a specific donation"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Donations and Tracking/{record_id}'
+        url = nocodb_records_url('Donations and Tracking', record_id)
         response = requests.get(url, headers=headers)
         return jsonify(response.json()), response.status_code
     except Exception as e:
@@ -277,12 +283,14 @@ def donation_write_operations(record_id):
     """Update or delete a specific donation"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Donations and Tracking/{record_id}'
+        url = nocodb_records_url('Donations and Tracking')
 
         if request.method == 'PATCH':
-            response = requests.patch(url, headers=headers, json=request.json)
+            body = {**(request.json or {}), 'Id': int(record_id)}
+            response = requests.patch(url, headers=headers, json=body)
         else:  # DELETE
-            response = requests.delete(url, headers=headers)
+            body = {'Id': int(record_id)}
+            response = requests.delete(url, headers=headers, json=body)
 
         return jsonify(response.json()), response.status_code
 
@@ -290,14 +298,14 @@ def donation_write_operations(record_id):
         app.logger.error(f"Donation operation error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ============= CALENDAR ROUTES (donator-base) =============
+# ============= CALENDAR ROUTES =============
 
 @app.route('/api/calendar', methods=['GET'])
 def get_calendar():
     """Get public calendar events"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Public Calendar'
+        url = nocodb_records_url('Public Calendar')
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -311,7 +319,7 @@ def get_team_calendar():
     """Get team calendar events"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Team Calendar'
+        url = nocodb_records_url('Team Calendar')
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -320,14 +328,14 @@ def get_team_calendar():
         app.logger.error(f"Get team calendar error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ============= AUCTION ROUTES (auction-base) =============
+# ============= AUCTION ROUTES =============
 
 @app.route('/api/auction/items', methods=['GET'])
 def get_auction_items():
     """Get all auction items"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_AUCTION_BASE_ID}/Auction Items'
+        url = nocodb_records_url('Auction Items')
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -341,7 +349,7 @@ def get_auction_item(item_id):
     """Get a single auction item by ID"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_AUCTION_BASE_ID}/Auction Items/{item_id}'
+        url = nocodb_records_url('Auction Items', item_id)
 
         response = requests.get(url, headers=headers)
         return jsonify(response.json()), response.status_code
@@ -356,7 +364,7 @@ def create_auction_item():
     """Create a new auction item (admin only)"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_AUCTION_BASE_ID}/Auction Items'
+        url = nocodb_records_url('Auction Items')
 
         response = requests.post(url, headers=headers, json=request.json)
         return jsonify(response.json()), response.status_code
@@ -371,12 +379,14 @@ def auction_item_write_operations(item_id):
     """Update or delete an auction item (admin only)"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_AUCTION_BASE_ID}/Auction Items/{item_id}'
+        url = nocodb_records_url('Auction Items')
 
         if request.method == 'PATCH':
-            response = requests.patch(url, headers=headers, json=request.json)
+            body = {**(request.json or {}), 'Id': int(item_id)}
+            response = requests.patch(url, headers=headers, json=body)
         else:
-            response = requests.delete(url, headers=headers)
+            body = {'Id': int(item_id)}
+            response = requests.delete(url, headers=headers, json=body)
 
         return jsonify(response.json()), response.status_code
 
@@ -389,7 +399,7 @@ def get_auction_bids():
     """Get all bids"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_AUCTION_BASE_ID}/Bids'
+        url = nocodb_records_url('Bids')
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -417,7 +427,7 @@ def place_bid():
             return jsonify({'error': 'Amount must be a positive number'}), 400
 
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_AUCTION_BASE_ID}/Bids'
+        url = nocodb_records_url('Bids')
 
         response = requests.post(url, headers=headers, json=data)
         return jsonify(response.json()), response.status_code
@@ -426,14 +436,14 @@ def place_bid():
         app.logger.error(f"Place bid error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ============= ANNOUNCEMENTS / CAMPAIGN (donator-base) =============
+# ============= ANNOUNCEMENTS / CAMPAIGN =============
 
 @app.route('/api/announcements', methods=['GET'])
 def get_announcements():
     """Get all active announcements"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Announcements'
+        url = nocodb_records_url('Announcements')
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -448,7 +458,7 @@ def create_announcement():
     """Create an announcement (admin only)"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Announcements'
+        url = nocodb_records_url('Announcements')
 
         response = requests.post(url, headers=headers, json=request.json)
         return jsonify(response.json()), response.status_code
@@ -462,7 +472,7 @@ def get_campaign():
     """Get current campaign settings (countdown, donate link, etc.)"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Campaign Settings'
+        url = nocodb_records_url('Campaign Settings')
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -477,7 +487,7 @@ def update_campaign():
     """Update campaign settings (admin only)"""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{NOCODB_DONATOR_BASE_ID}/Campaign Settings'
+        url = nocodb_records_url('Campaign Settings')
 
         response = requests.patch(url, headers=headers, json=request.json)
         return jsonify(response.json()), response.status_code
@@ -486,18 +496,17 @@ def update_campaign():
         app.logger.error(f"Update campaign error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ============= GENERIC TABLE ROUTES (allowlisted, base resolved per-table) =============
+# ============= GENERIC TABLE ROUTES (allowlisted) =============
 
 @app.route('/api/tables/<table_name>', methods=['GET'])
 def get_table_data(table_name):
-    """Get data from an allowlisted table (base resolved automatically)"""
-    base_id = TABLE_BASE_MAP.get(table_name)
-    if not base_id:
+    """Get data from an allowlisted table"""
+    if table_name not in TABLE_IDS:
         return jsonify({'error': f'Table "{table_name}" is not accessible via this API'}), 403
 
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{base_id}/{table_name}'
+        url = nocodb_records_url(table_name)
 
         response = requests.get(url, headers=headers, params=request.args)
         return jsonify(response.json()), response.status_code
@@ -509,14 +518,13 @@ def get_table_data(table_name):
 @app.route('/api/tables/<table_name>', methods=['POST'])
 @require_api_key
 def create_record(table_name):
-    """Create record in an allowlisted table (base resolved automatically)"""
-    base_id = TABLE_BASE_MAP.get(table_name)
-    if not base_id:
+    """Create record in an allowlisted table"""
+    if table_name not in TABLE_IDS:
         return jsonify({'error': f'Table "{table_name}" is not accessible via this API'}), 403
 
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{base_id}/{table_name}'
+        url = nocodb_records_url(table_name)
 
         response = requests.post(url, headers=headers, json=request.json)
         return jsonify(response.json()), response.status_code
@@ -527,14 +535,13 @@ def create_record(table_name):
 
 @app.route('/api/tables/<table_name>/<record_id>', methods=['GET'])
 def get_table_record(table_name, record_id):
-    """Get a specific record from an allowlisted table (base resolved automatically)"""
-    base_id = TABLE_BASE_MAP.get(table_name)
-    if not base_id:
+    """Get a specific record from an allowlisted table"""
+    if table_name not in TABLE_IDS:
         return jsonify({'error': f'Table "{table_name}" is not accessible via this API'}), 403
 
     try:
         headers = {'xc-token': NOCODB_TOKEN}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{base_id}/{table_name}/{record_id}'
+        url = nocodb_records_url(table_name, record_id)
         response = requests.get(url, headers=headers)
         return jsonify(response.json()), response.status_code
 
@@ -545,19 +552,20 @@ def get_table_record(table_name, record_id):
 @app.route('/api/tables/<table_name>/<record_id>', methods=['PATCH', 'DELETE'])
 @require_api_key
 def table_record_write_operations(table_name, record_id):
-    """Update or delete a specific record in an allowlisted table (base resolved automatically)"""
-    base_id = TABLE_BASE_MAP.get(table_name)
-    if not base_id:
+    """Update or delete a specific record in an allowlisted table"""
+    if table_name not in TABLE_IDS:
         return jsonify({'error': f'Table "{table_name}" is not accessible via this API'}), 403
 
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = f'{NOCODB_URL}/api/v1/db/data/v1/{base_id}/{table_name}/{record_id}'
+        url = nocodb_records_url(table_name)
 
         if request.method == 'PATCH':
-            response = requests.patch(url, headers=headers, json=request.json)
+            body = {**(request.json or {}), 'Id': int(record_id)}
+            response = requests.patch(url, headers=headers, json=body)
         else:  # DELETE
-            response = requests.delete(url, headers=headers)
+            body = {'Id': int(record_id)}
+            response = requests.delete(url, headers=headers, json=body)
 
         return jsonify(response.json()), response.status_code
 
