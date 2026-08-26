@@ -685,6 +685,55 @@ def internal_error(error):
     app.logger.error(f"Internal error: {error}")
     return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/api/donator-profile', methods=['GET'])
+def get_donator_profile():
+    """Get the current donator's profile"""
+    return jsonify({
+        'donator_id': current_user.id,
+        'name': current_user.name,
+        'email': current_user.email
+    }), 200
+
+@app.route('/api/donator-profile', methods=['POST'])
+def upsert_donator_profile():
+    """Create or update a donator profile"""
+    try:
+        data = request.json or {}
+        name = data.get('name', '').strip()
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+
+        if not name or not email or not password:
+            return jsonify({'error': 'Name, email, and password are required'}), 400
+        if len(password) < 8:
+            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT id FROM donators WHERE email = %s", (email,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'An account with this email already exists'}), 409
+
+        password_hash = generate_password_hash(password)
+        cur.execute(
+            "INSERT INTO donators (name, email, password_hash) VALUES (%s, %s, %s) RETURNING id",
+            (name, email, password_hash)
+        )
+        new_id = cur.fetchone()['id']
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        login_user(Donator(new_id, name, email), remember=True)
+        return jsonify({'name': name, 'email': email}), 201
+
+    except Exception as e:
+        app.logger.error(f"Register error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     debug_mode = FLASK_ENV == 'development'
 
