@@ -56,7 +56,7 @@ TABLE_IDS = {
     'Public Calendar': 'm2pcy5vvdir11qr',
     'Team Calendar': 'm7d9kcnaqabtihu',
     'Announcements': 'muop1f8mhgos6uy',
-    'Campaign Settings': 'mf0h6hpznxy4v1g',
+    'Campaign Settings': 'm5k63e9xcuixxio',
     'Auction Items': 'm02kvrs08uiij89',
     'Bids': 'mw3pqffp5qhrrjj',
 }
