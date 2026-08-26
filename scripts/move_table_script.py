@@ -220,9 +220,11 @@ TABLE_SCHEMAS = {
             }},
             {"title": "Estimated Shipping Cost", "uidt": "SingleLineText"},
             {"title": "Winner Payment Method", "uidt": "SingleLineText"},
-            {"title": "Shipping Countries", "uidt": "MultiSelect", "colOptions": {
-                "options": _SHIPPING_COUNTRY_OPTIONS
-            }},
+            # Plain text, comma-separated list — deliberately NOT MultiSelect.
+            # A MultiSelect field renders as clickable chips directly in the NocoDB grid,
+            # making it too easy for an admin to accidentally add/remove a country with a stray click.
+            # LongText is inert to display — safer for a field admins only need to *read*.
+            {"title": "Shipping Countries", "uidt": "LongText"},
             {"title": "Submitted At", "uidt": "DateTime"},
         ]
     },
