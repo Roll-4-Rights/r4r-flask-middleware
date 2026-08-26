@@ -8,6 +8,7 @@ import requests
 import os
 from dotenv import load_dotenv
 from db import get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email
+from datetime import datetime
 
 load_dotenv()
 
@@ -97,6 +98,7 @@ TABLE_IDS = {
     'Auction Items': 'm02kvrs08uiij89',
     'Bids': 'mw3pqffp5qhrrjj',
     'Donator FAQs': 'mrsh3g2gm19ytlf',
+    'Donator Messages': 'PASTE_NEW_TABLE_ID_HERE',
 }
 ALLOWED_TABLES = list(TABLE_IDS.keys())
 
