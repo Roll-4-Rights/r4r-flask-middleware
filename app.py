@@ -358,8 +358,11 @@ def get_calendar():
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Public Calendar')
 
-        response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
+        response = requests.get(url, headers=headers, params={'limit': 1000, **request.args})
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records), response.status_code
 
     except Exception as e:
         app.logger.error(f"Get calendar error: {e}")
@@ -372,8 +375,11 @@ def get_team_calendar():
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Team Calendar')
 
-        response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
+        response = requests.get(url, headers=headers, params={'limit': 1000, **request.args})
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records), response.status_code
 
     except Exception as e:
         app.logger.error(f"Get team calendar error: {e}")
@@ -518,13 +524,24 @@ def place_bid():
 
 @app.route('/api/announcements', methods=['GET'])
 def get_announcements():
-    """Get all active announcements"""
+    """
+    Public, read-only announcements for the home page feed.
+    Only rows with 'Is Active' checked are returned; sorted by Priority (desc),
+    then Created At (desc) as a tiebreaker.
+    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Announcements')
 
-        response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
+        response = requests.get(url, headers=headers, params={
+            'limit': 1000,
+            'where': "(Is Active,eq,true)",
+            'sort': '-Priority,-Created At'
+        })
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records), response.status_code
 
     except Exception as e:
         app.logger.error(f"Get announcements error: {e}")
