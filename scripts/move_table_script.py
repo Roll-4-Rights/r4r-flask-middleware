@@ -15,8 +15,88 @@ NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080')
 NOCODB_EMAIL = os.environ.get('NOCODB_EMAIL')
 NOCODB_PASSWORD = os.environ.get('NOCODB_PASSWORD')
 
-# Known table schemas — add new ones here as your schema grows.
-# Must match whatever's defined in setup_nocodb_tables.py.
+# Same country list used in the frontend form — kept in sync manually.
+# NOTE: "Bonaire, Sint Eustatius & Saba" has its internal comma replaced with "&"
+# because NocoDB (and our API calls) represent MultiSelect values as
+# comma-separated strings — a literal comma inside an option title breaks parsing.
+_SHIPPING_COUNTRY_OPTIONS = [
+    {"title": "Worldwide"},
+    {"title": "United States"}, {"title": "United Kingdom"}, {"title": "Canada"},
+    {"title": "Australia"}, {"title": "Germany"}, {"title": "France"},
+    {"title": "Afghanistan"}, {"title": "Åland Islands"}, {"title": "Albania"},
+    {"title": "Algeria"}, {"title": "American Samoa"}, {"title": "Andorra"},
+    {"title": "Angola"}, {"title": "Anguilla"}, {"title": "Antarctica"},
+    {"title": "Antigua & Barbuda"}, {"title": "Argentina"}, {"title": "Armenia"},
+    {"title": "Aruba"}, {"title": "Austria"}, {"title": "Azerbaijan"},
+    {"title": "Bahamas"}, {"title": "Bahrain"}, {"title": "Bangladesh"},
+    {"title": "Barbados"}, {"title": "Belarus"}, {"title": "Belgium"},
+    {"title": "Belize"}, {"title": "Benin"}, {"title": "Bermuda"}, {"title": "Bhutan"},
+    {"title": "Bolivia"}, {"title": "Bonaire & Sint Eustatius & Saba"},
+    {"title": "Bosnia & Herzegovina"}, {"title": "Botswana"}, {"title": "Bouvet Island"},
+    {"title": "Brazil"}, {"title": "British Indian Ocean Territory"},
+    {"title": "British Virgin Islands"}, {"title": "Brunei"}, {"title": "Bulgaria"},
+    {"title": "Burkina Faso"}, {"title": "Burundi"}, {"title": "Cambodia"},
+    {"title": "Cameroon"}, {"title": "Cape Verde"}, {"title": "Cayman Islands"},
+    {"title": "Central African Republic"}, {"title": "Chad"}, {"title": "Chile"},
+    {"title": "China"}, {"title": "Christmas Island"}, {"title": "Cocos (Keeling) Islands"},
+    {"title": "Colombia"}, {"title": "Comoros"}, {"title": "Congo (Democratic Republic of the)"},
+    {"title": "Congo (Republic of the)"}, {"title": "Cook Islands"}, {"title": "Costa Rica"},
+    {"title": "Côte d'Ivoire"}, {"title": "Croatia"}, {"title": "Cuba"}, {"title": "Curaçao"},
+    {"title": "Cyprus"}, {"title": "Czech Republic"}, {"title": "Denmark"}, {"title": "Djibouti"},
+    {"title": "Dominica"}, {"title": "Dominican Republic"}, {"title": "Ecuador"},
+    {"title": "Egypt"}, {"title": "El Salvador"}, {"title": "Equatorial Guinea"},
+    {"title": "Eritrea"}, {"title": "Estonia"}, {"title": "Eswatini"}, {"title": "Ethiopia"},
+    {"title": "Falkland Islands"}, {"title": "Faroe Islands"}, {"title": "Fiji"},
+    {"title": "Finland"}, {"title": "French Guiana"}, {"title": "French Polynesia"},
+    {"title": "French Southern Territories"}, {"title": "Gabon"}, {"title": "Gambia"},
+    {"title": "Georgia"}, {"title": "Ghana"}, {"title": "Gibraltar"}, {"title": "Greece"},
+    {"title": "Greenland"}, {"title": "Grenada"}, {"title": "Guadeloupe"}, {"title": "Guam"},
+    {"title": "Guatemala"}, {"title": "Guernsey"}, {"title": "Guinea"}, {"title": "Guinea-Bissau"},
+    {"title": "Guyana"}, {"title": "Haiti"}, {"title": "Heard Island & McDonald Islands"},
+    {"title": "Honduras"}, {"title": "Hong Kong"}, {"title": "Hungary"}, {"title": "Iceland"},
+    {"title": "India"}, {"title": "Indonesia"}, {"title": "Iran"}, {"title": "Iraq"},
+    {"title": "Ireland"}, {"title": "Isle of Man"}, {"title": "Israel"}, {"title": "Italy"},
+    {"title": "Jamaica"}, {"title": "Japan"}, {"title": "Jersey"}, {"title": "Jordan"},
+    {"title": "Kazakhstan"}, {"title": "Kenya"}, {"title": "Kiribati"}, {"title": "Kuwait"},
+    {"title": "Kyrgyzstan"}, {"title": "Laos"}, {"title": "Latvia"}, {"title": "Lebanon"},
+    {"title": "Lesotho"}, {"title": "Liberia"}, {"title": "Libya"}, {"title": "Liechtenstein"},
+    {"title": "Lithuania"}, {"title": "Luxembourg"}, {"title": "Macau"}, {"title": "Madagascar"},
+    {"title": "Malawi"}, {"title": "Malaysia"}, {"title": "Maldives"}, {"title": "Mali"},
+    {"title": "Malta"}, {"title": "Marshall Islands"}, {"title": "Martinique"},
+    {"title": "Mauritania"}, {"title": "Mauritius"}, {"title": "Mayotte"}, {"title": "Mexico"},
+    {"title": "Micronesia"}, {"title": "Moldova"}, {"title": "Monaco"}, {"title": "Mongolia"},
+    {"title": "Montenegro"}, {"title": "Montserrat"}, {"title": "Morocco"}, {"title": "Mozambique"},
+    {"title": "Myanmar"}, {"title": "Namibia"}, {"title": "Nauru"}, {"title": "Nepal"},
+    {"title": "Netherlands"}, {"title": "New Caledonia"}, {"title": "New Zealand"},
+    {"title": "Nicaragua"}, {"title": "Niger"}, {"title": "Nigeria"}, {"title": "Niue"},
+    {"title": "Norfolk Island"}, {"title": "North Korea"}, {"title": "North Macedonia"},
+    {"title": "Northern Mariana Islands"}, {"title": "Norway"}, {"title": "Oman"},
+    {"title": "Pakistan"}, {"title": "Palau"}, {"title": "Palestine"}, {"title": "Panama"},
+    {"title": "Papua New Guinea"}, {"title": "Paraguay"}, {"title": "Peru"},
+    {"title": "Philippines"}, {"title": "Pitcairn Islands"}, {"title": "Poland"},
+    {"title": "Portugal"}, {"title": "Puerto Rico"}, {"title": "Qatar"}, {"title": "Réunion"},
+    {"title": "Romania"}, {"title": "Russia"}, {"title": "Rwanda"}, {"title": "Saint Barthélemy"},
+    {"title": "Saint Helena, Ascension & Tristan da Cunha"}, {"title": "Saint Kitts & Nevis"},
+    {"title": "Saint Lucia"}, {"title": "Saint Martin (French part)"},
+    {"title": "Saint Pierre & Miquelon"}, {"title": "Saint Vincent & the Grenadines"},
+    {"title": "Samoa"}, {"title": "San Marino"}, {"title": "Sao Tome & Principe"},
+    {"title": "Saudi Arabia"}, {"title": "Senegal"}, {"title": "Serbia"}, {"title": "Seychelles"},
+    {"title": "Sierra Leone"}, {"title": "Singapore"}, {"title": "Sint Maarten (Dutch part)"},
+    {"title": "Slovakia"}, {"title": "Slovenia"}, {"title": "Solomon Islands"}, {"title": "Somalia"},
+    {"title": "South Africa"}, {"title": "South Georgia & the South Sandwich Islands"},
+    {"title": "South Korea"}, {"title": "South Sudan"}, {"title": "Spain"}, {"title": "Sri Lanka"},
+    {"title": "Sudan"}, {"title": "Suriname"}, {"title": "Svalbard & Jan Mayen"}, {"title": "Sweden"},
+    {"title": "Switzerland"}, {"title": "Syria"}, {"title": "Taiwan"}, {"title": "Tajikistan"},
+    {"title": "Tanzania"}, {"title": "Thailand"}, {"title": "Timor-Leste"}, {"title": "Togo"},
+    {"title": "Tokelau"}, {"title": "Tonga"}, {"title": "Trinidad & Tobago"}, {"title": "Tunisia"},
+    {"title": "Turkey"}, {"title": "Turkmenistan"}, {"title": "Turks & Caicos Islands"},
+    {"title": "Tuvalu"}, {"title": "Uganda"}, {"title": "Ukraine"}, {"title": "United Arab Emirates"},
+    {"title": "United States Minor Outlying Islands"}, {"title": "United States Virgin Islands"},
+    {"title": "Uruguay"}, {"title": "Uzbekistan"}, {"title": "Vanuatu"}, {"title": "Vatican City"},
+    {"title": "Venezuela"}, {"title": "Vietnam"}, {"title": "Wallis & Futuna"},
+    {"title": "Western Sahara"}, {"title": "Yemen"}, {"title": "Zambia"}, {"title": "Zimbabwe"},
+]
+
 TABLE_SCHEMAS = {
     "Donations and Tracking": {
         "title": "Donations and Tracking",
@@ -122,6 +202,28 @@ TABLE_SCHEMAS = {
             {"title": "End Date", "uidt": "Date"},
             {"title": "Goal Amount", "uidt": "Decimal"},
             {"title": "Donate Link", "uidt": "URL"},
+        ]
+    },
+    "Donator Profiles": {
+        "title": "Donator Profiles",
+        "columns": [
+            {"title": "Donator Email", "uidt": "Email"},
+            {"title": "Social Media Name", "uidt": "SingleLineText"},
+            {"title": "Wares Description", "uidt": "LongText"},
+            {"title": "Location", "uidt": "SingleLineText"},
+            {"title": "Website", "uidt": "URL"},
+            {"title": "Shipping Type", "uidt": "SingleSelect", "colOptions": {
+                "options": [
+                    {"title": "donator_pays"},
+                    {"title": "winner_pays"}
+                ]
+            }},
+            {"title": "Estimated Shipping Cost", "uidt": "SingleLineText"},
+            {"title": "Winner Payment Method", "uidt": "SingleLineText"},
+            {"title": "Shipping Countries", "uidt": "MultiSelect", "colOptions": {
+                "options": _SHIPPING_COUNTRY_OPTIONS
+            }},
+            {"title": "Submitted At", "uidt": "DateTime"},
         ]
     },
 }
