@@ -237,13 +237,17 @@ def get_current_donator():
 # ============= DONATIONS ROUTES =============
 
 @app.route('/api/donations', methods=['GET'])
+@require_donator_auth
 def get_donations():
-    """Get all donations"""
+    """Get donations belonging to the logged-in donator"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Donations and Tracking')
 
-        response = requests.get(url, headers=headers, params=request.args)
+        params = dict(request.args)
+        params['where'] = f"(Donator Email,eq,{request.donator_email})"
+
+        response = requests.get(url, headers=headers, params=params)
         return jsonify(response.json()), response.status_code
 
     except Exception as e:
@@ -251,14 +255,19 @@ def get_donations():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/donations', methods=['POST'])
-@require_api_key
+@require_donator_auth
 def create_donation():
-    """Create a new donation"""
+    """Create a new donation (must be logged in — donator identity comes from JWT, not the request body)"""
     try:
+        data = request.json or {}
+
+        # Ignore any client-supplied identity fields — always trust the verified JWT
+        data['Donator Email'] = request.donator_email
+
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
         url = nocodb_records_url('Donations and Tracking')
 
-        response = requests.post(url, headers=headers, json=request.json)
+        response = requests.post(url, headers=headers, json=data)
         return jsonify(response.json()), response.status_code
 
     except Exception as e:
@@ -266,12 +275,19 @@ def create_donation():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/donations/<record_id>', methods=['GET'])
+@require_donator_auth
 def get_donation(record_id):
-    """Get a specific donation"""
+    """Get a specific donation — only if it belongs to the logged-in donator"""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Donations and Tracking', record_id)
         response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            record = response.json()
+            if record.get('Donator Email') != request.donator_email:
+                return jsonify({'error': 'Not found'}), 404
+
         return jsonify(response.json()), response.status_code
     except Exception as e:
         app.logger.error(f"Get donation error: {e}")
