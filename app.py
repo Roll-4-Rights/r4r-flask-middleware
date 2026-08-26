@@ -52,7 +52,7 @@ NOCODB_AUCTION_BASE_ID = os.environ.get('NOCODB_AUCTION_BASE_ID')
 # NocoDB v2 records API requires table IDs, not table names.
 # These are stable once created — get them via scripts/get_table_ids.py if they ever change.
 TABLE_IDS = {
-    'Donations and Tracking': 'mvfbfkw4tndofk7',
+    'Donations and Tracking': 'mxe1093xcatdwzr',
     'Public Calendar': 'm2pcy5vvdir11qr',
     'Team Calendar': 'm7d9kcnaqabtihu',
     'Announcements': 'muop1f8mhgos6uy',
