@@ -101,6 +101,8 @@ ALLOWED_TABLES = list(TABLE_IDS.keys())
 
 MIDDLEWARE_API_KEY = os.environ.get('MIDDLEWARE_API_KEY')
 
+MILESTONE_STEP = 10000
+
 print("Flask Configuration:")
 print(f"   Environment: {FLASK_ENV}")
 print(f"   NocoDB URL: {NOCODB_URL}")
@@ -458,7 +460,7 @@ def get_auction_bids():
 
 @app.route('/api/auction/bids', methods=['POST'])
 def place_bid():
-    """Place a new bid (public - no API key required, but validated)"""
+    """Place a new bid (public - no API key required, but validated)."""
     try:
         data = request.json or {}
 
@@ -474,11 +476,38 @@ def place_bid():
         except (ValueError, TypeError):
             return jsonify({'error': 'Amount must be a positive number'}), 400
 
-        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-        url = nocodb_records_url('Bids')
+        try:
+            item_id_int = int(data['item_id'])
+        except (ValueError, TypeError):
+            return jsonify({'error': 'item_id must be a valid integer'}), 400
 
-        response = requests.post(url, headers=headers, json=data)
-        return jsonify(response.json()), response.status_code
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+
+        item_resp = requests.get(
+            nocodb_records_url('Auction Items', item_id_int),
+            headers={'xc-token': NOCODB_TOKEN}
+        )
+        if item_resp.status_code != 200:
+            return jsonify({'error': 'Auction item not found'}), 404
+        item = item_resp.json()
+
+        current_bid = float(item.get('Current Bid') or item.get('Starting Bid') or 0)
+        if amount <= current_bid:
+            return jsonify({'error': f'Bid must be higher than the current bid (${current_bid:.2f})'}), 400
+
+        bid_response = requests.post(nocodb_records_url('Bids'), headers=headers, json=data)
+        if bid_response.status_code not in (200, 201):
+            return jsonify(bid_response.json()), bid_response.status_code
+
+        requests.patch(nocodb_records_url('Auction Items'), headers=headers, json={
+            'Id': item_id_int,
+            'Current Bid': amount,
+            'Current Bidder Name': data['bidder_name']
+        })
+
+        recompute_running_total()
+
+        return jsonify(bid_response.json()), bid_response.status_code
 
     except Exception as e:
         app.logger.error(f"Place bid error: {e}")
@@ -542,6 +571,38 @@ def update_campaign():
 
     except Exception as e:
         app.logger.error(f"Update campaign error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/campaign-progress', methods=['GET'])
+def get_campaign_progress():
+    """
+    Live fundraising total, read directly from Campaign Settings.Running Est Total --
+    which is kept current automatically every time a bid is placed (see
+    recompute_running_total()). No summing needed here; just a fast single read.
+    """
+    try:
+        headers = {'xc-token': NOCODB_TOKEN}
+
+        settings_resp = requests.get(nocodb_records_url('Campaign Settings'), headers=headers)
+        settings_data = settings_resp.json()
+        settings_records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
+        settings = settings_records[0] if settings_records else {}
+
+        total = float(settings.get('Running Est Total') or 0)
+
+        current_milestone = int(total // MILESTONE_STEP) * MILESTONE_STEP
+        next_milestone = current_milestone + MILESTONE_STEP
+        progress_within_milestone = (total - current_milestone) / MILESTONE_STEP
+
+        return jsonify({
+            'total': total,
+            'currentMilestone': current_milestone,
+            'nextMilestone': next_milestone,
+            'progressWithinMilestone': progress_within_milestone
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Get campaign progress error: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============= GENERIC TABLE ROUTES (allowlisted) =============
@@ -739,6 +800,33 @@ def upsert_donator_profile():
     except Exception as e:
         app.logger.error(f"Upsert donator profile error: {e}")
         return jsonify({'error': str(e)}), 500
+
+def recompute_running_total():
+    """
+    Sums Current Bid across all Auction Items and writes the result to
+    Campaign Settings.Running Est Total. Called right after a bid is placed
+    so the field always reflects the live total -- both for the app's
+    progress endpoint AND for anyone looking directly in NocoDB.
+    """
+    headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+
+    items_resp = requests.get(nocodb_records_url('Auction Items'), headers={'xc-token': NOCODB_TOKEN}, params={'limit': 1000})
+    items_data = items_resp.json()
+    items = items_data.get('list', []) if isinstance(items_data, dict) else items_data
+    total = sum(float(item.get('Current Bid') or 0) for item in items)
+
+    settings_resp = requests.get(nocodb_records_url('Campaign Settings'), headers={'xc-token': NOCODB_TOKEN})
+    settings_data = settings_resp.json()
+    settings_records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
+
+    if settings_records:
+        requests.patch(nocodb_records_url('Campaign Settings'), headers=headers, json={
+            'Id': settings_records[0]['Id'],
+            'Running Est Total': total
+        })
+
+    return total
+
 
 if __name__ == '__main__':
     debug_mode = FLASK_ENV == 'development'
