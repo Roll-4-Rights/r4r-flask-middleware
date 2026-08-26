@@ -96,6 +96,7 @@ TABLE_IDS = {
     'Campaign Settings': 'm5k63e9xcuixxio',
     'Auction Items': 'm02kvrs08uiij89',
     'Bids': 'mw3pqffp5qhrrjj',
+    'Donator FAQs': 'mrsh3g2gm19ytlf',
 }
 ALLOWED_TABLES = list(TABLE_IDS.keys())
 
@@ -757,6 +758,7 @@ def index():
             'auction_bids': '/api/auction/bids',
             'announcements': '/api/announcements',
             'campaign': '/api/campaign',
+            'donator_faqs': '/api/donator-faqs',
             'upload': '/api/upload',
             'generic': '/api/tables/<table_name>'
         }
