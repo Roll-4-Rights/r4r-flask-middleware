@@ -89,6 +89,7 @@ NOCODB_AUCTION_BASE_ID = os.environ.get('NOCODB_AUCTION_BASE_ID')
 
 TABLE_IDS = {
     'Donations and Tracking': 'mxe1093xcatdwzr',
+    'Donator Profiles': 'mvga4wzvkiq52xx',
     'Public Calendar': 'm2pcy5vvdir11qr',
     'Team Calendar': 'm7d9kcnaqabtihu',
     'Announcements': 'muop1f8mhgos6uy',
@@ -282,6 +283,7 @@ def create_donation():
     try:
         data = request.json or {}
         data['Donator Email'] = current_user.email
+        data['Item Status'] = 'Submitted'  # always starts here regardless of what the client sends
 
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
         url = nocodb_records_url('Donations and Tracking')
@@ -332,7 +334,7 @@ def donation_write_operations(record_id):
         if request.method == 'PATCH':
             body = {**(request.json or {}), 'Id': int(record_id)}
             body.pop('Donator Email', None)
-            body.pop('Auction Status', None)
+            body.pop('Item Status', None)
             response = requests.patch(list_url, headers=headers, json=body)
         else:
             body = {'Id': int(record_id)}
@@ -608,6 +610,8 @@ def table_record_write_operations(table_name, record_id):
 
         if request.method == 'PATCH':
             body = {**(request.json or {}), 'Id': int(record_id)}
+            body.pop('Donator Email', None)
+            body.pop('Item Status', None)
             response = requests.patch(url, headers=headers, json=body)
         else:  # DELETE
             body = {'Id': int(record_id)}
