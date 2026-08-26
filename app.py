@@ -622,9 +622,10 @@ def table_record_write_operations(table_name, record_id):
 # ============= FILE UPLOAD =============
 
 @app.route('/api/upload', methods=['POST'])
-@require_api_key
+@login_required
+@csrf_protect
 def upload_files():
-    """Upload files to NocoDB storage (admin only)"""
+    """Upload files to NocoDB storage (any logged-in donator)"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
