@@ -635,6 +635,27 @@ def get_campaign_info():
         app.logger.error(f"Get campaign info error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/donator-faqs', methods=['GET'])
+def get_donator_faqs():
+    """
+    Public, read-only FAQ content for the guides-faq page.
+    Adding a new 'Topic' option in NocoDB automatically becomes a new tab
+    client-side -- no code changes or deploys needed for new topics.
+    """
+    try:
+        headers = {'xc-token': NOCODB_TOKEN}
+        url = nocodb_records_url('Donator FAQs')
+
+        response = requests.get(url, headers=headers, params={'limit': 1000, **request.args})
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Get donator FAQs error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # ============= GENERIC TABLE ROUTES (allowlisted) =============
 
 @app.route('/api/tables/<table_name>', methods=['GET'])
