@@ -910,12 +910,22 @@ def get_donator_account():
         )
         data = response.json()
         records = data.get('list', []) if isinstance(data, dict) else data
+        
         if records:
-            return jsonify(records[0]), 200
+            profile = records[0]
+            
+            #  FIX: Sanitize the avatar key before sending it out
+            # Replace 'Avatar' with your exact NocoDB column name
+            avatar_url = profile.get('Avatar', '')
+            if avatar_url and ('unsplash.com' in avatar_url or 'placehold.co' in avatar_url):
+                profile['Avatar'] = '' # Erase the external trigger string
+                
+            return jsonify(profile), 200
         return jsonify({'error': 'Donator profile not found'}), 404
     except Exception as e:
         app.logger.error(f"Get donator account error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/donator/account', methods=['POST'])
 def update_donator_account():
