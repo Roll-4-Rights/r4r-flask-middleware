@@ -836,7 +836,7 @@ def get_donator_profile():
         app.logger.error(f"Get donator profile error: {e}")
         return jsonify({'error': str(e)}), 500
 
-
+# ============= DONATOR INFO ROUTES =============
 @app.route('/api/donator-profile', methods=['POST'])
 @login_required
 @csrf_protect
@@ -897,6 +897,57 @@ def recompute_running_total():
         })
 
     return total
+
+# ============= DONATOR ACCOUNT ROUTES =============
+"""Flask routes for managing donator account information, such as uploading a profile picture, changing password, and updating username"""
+@app.route('/donator/account', methods=['GET'])
+def get_donator_account():
+    try:
+        url = nocodb_records_url('Donator Profiles')
+        response = requests.get(
+            url, headers={'xc-token': NOCODB_TOKEN},
+            params={'where': f"(Donator Email,eq,{current_user.email})"}
+        )
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+        if records:
+            return jsonify(records[0]), 200
+        return jsonify({'error': 'Donator profile not found'}), 404
+    except Exception as e:
+        app.logger.error(f"Get donator account error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/donator/account', methods=['POST'])
+def update_donator_account():
+    try:
+        url = nocodb_records_url('Donator Profiles')
+        response = requests.get(
+            url, headers={'xc-token': NOCODB_TOKEN},
+            params={'where': f"(Donator Email,eq,{current_user.email})"}
+        )
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+        if not records:
+            return jsonify({'error': 'Donator profile not found'}), 404
+
+        record_id = records[0]['Id']
+        update_data = request.json
+        update_response = requests.patch(
+            f"{url}/{record_id}",
+            headers={'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'},
+            json=update_data
+        )
+        return jsonify(update_response.json()), update_response.status_code
+    except Exception as e:
+        app.logger.error(f"Update donator account error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    
+
+
+
+
+
 
 
 if __name__ == '__main__':
