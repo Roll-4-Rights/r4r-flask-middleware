@@ -50,3 +50,23 @@ def get_donator_by_email(email):
     cur.close()
     conn.close()
     return row
+
+def init_donators_table():
+    """Create the donators table if it doesn't already exist, and patch in any
+    columns added after the table was first created. Safe to call every startup."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS donators (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            profile_picture VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("ALTER TABLE donators ADD COLUMN IF NOT EXISTS profile_picture VARCHAR(255)")
+    conn.commit()
+    cur.close()
+    conn.close()

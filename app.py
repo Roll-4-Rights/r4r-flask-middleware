@@ -254,25 +254,33 @@ def logout_donator():
     return jsonify({'message': 'Logged out'}), 200
 
 
+
+# ============= DONATOR AUTH ROUTES - ACCOUNT MANAGEMENT =============
+
+
 @app.route('/api/auth/me', methods=['GET'])
 @login_required
 def get_current_donator():
     """Get the currently logged-in donator's info (used by frontend to check login state)"""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT profile_picture FROM donators WHERE id = %s", (current_user.id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT profile_picture FROM donators WHERE id = %s", (current_user.id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
 
-    picture_path = f"/profile-pictures/{row['profile_picture']}" if row and row['profile_picture'] else None
+        picture_path = f"/profile-pictures/{row['profile_picture']}" if row and row['profile_picture'] else None
 
-    return jsonify({
-        'donator_id': current_user.id,
-        'email': current_user.email,
-        'name': current_user.name,
-        'profile_picture': picture_path
-    }), 200
+        return jsonify({
+            'donator_id': current_user.id,
+            'email': current_user.email,
+            'name': current_user.name,
+            'profile_picture': picture_path
+        }), 200
+    except Exception as e:
+        app.logger.error(f"Get current donator error: {e}")
+        return jsonify({'error': 'Failed to load account'}), 500
 
 
 @app.route('/api/auth/me', methods=['PATCH'])
