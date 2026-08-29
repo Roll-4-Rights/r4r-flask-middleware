@@ -447,7 +447,7 @@ def send_message():
         payload = {
             'Question': question,
             'Donator Email': current_user.email,
-            'Status': 'Pending'   # always starts here, regardless of what the client sends
+            'Status': 'New'   # always starts here, regardless of what the client sends
         }
 
         response = requests.post(url, headers=headers, json=payload)
