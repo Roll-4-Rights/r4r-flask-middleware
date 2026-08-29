@@ -447,7 +447,8 @@ def send_message():
         payload = {
             'Question': question,
             'Donator Email': current_user.email,
-            'Status': 'New'   # always starts here, regardless of what the client sends
+            'Donator Name': current_user.name,
+            'Status': 'New'
         }
 
         response = requests.post(url, headers=headers, json=payload)
@@ -1047,7 +1048,10 @@ def recompute_running_total():
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 MAX_IMAGE_DIMENSION = 1024
-UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads', 'profile_pictures')
+UPLOAD_FOLDER = os.path.join(
+    os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', app.root_path),
+    'uploads', 'profile_pictures'
+)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB cap, applies globally
