@@ -254,25 +254,30 @@ def logout_donator():
     return jsonify({'message': 'Logged out'}), 200
 
 
-@app.route('/api/auth/me', methods=['GET'])
+@app.route('/api/auth/me', methods=['PATCH'])
 @login_required
-def get_current_donator():
-    """Get the currently logged-in donator's info (used by frontend to check login state)"""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT profile_picture FROM donators WHERE id = %s", (current_user.id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+@csrf_protect
+def update_donator_name():
+    """Update the current donator's display name"""
+    try:
+        data = request.json or {}
+        name = data.get('name', '').strip()
 
-    picture_path = f"/profile-pictures/{row['profile_picture']}" if row and row['profile_picture'] else None
+        if not name:
+            return jsonify({'error': 'Name is required'}), 400
 
-    return jsonify({
-        'donator_id': current_user.id,
-        'email': current_user.email,
-        'name': current_user.name,
-        'profile_picture': picture_path
-    }), 200
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE donators SET name = %s WHERE id = %s", (name, current_user.id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({'name': name}), 200
+
+    except Exception as e:
+        app.logger.error(f"Update name error: {e}")
+        return jsonify({'error': 'Update failed'}), 500
 
 
 # ============= DONATIONS ROUTES =============
@@ -367,6 +372,44 @@ def donation_write_operations(record_id):
         app.logger.error(f"Donation operation error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# ============= PASSWORD ROUTES =============
+
+@app.route('/api/auth/password', methods=['POST'])
+@login_required
+@csrf_protect
+def change_password():
+    """Change the current donator's password. Requires the correct current password."""
+    try:
+        data = request.json or {}
+        current_password = data.get('current_password', '')
+        new_password = data.get('new_password', '')
+
+        if not current_password or not new_password:
+            return jsonify({'error': 'Current and new password are required'}), 400
+        if len(new_password) < 8:
+            return jsonify({'error': 'New password must be at least 8 characters'}), 400
+
+        donator = get_donator_by_id(current_user.id)
+        if not donator or not check_password_hash(donator['password_hash'], current_password):
+            return jsonify({'error': 'Current password is incorrect'}), 401
+
+        new_hash = generate_password_hash(new_password)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE donators SET password_hash = %s WHERE id = %s", (new_hash, current_user.id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({'message': 'Password updated'}), 200
+
+    except Exception as e:
+        app.logger.error(f"Change password error: {e}")
+        return jsonify({'error': 'Password update failed'}), 500
+
+
+    
 # ============= CALENDAR ROUTES =============
 
 @app.route('/api/calendar', methods=['GET'])
