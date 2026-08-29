@@ -103,7 +103,7 @@ TABLE_IDS = {
     'Auction Items': 'm02kvrs08uiij89',
     'Bids': 'mw3pqffp5qhrrjj',
     'Donator FAQs': 'mrsh3g2gm19ytlf',
-    'Donator Messages': 'PASTE_NEW_TABLE_ID_HERE',
+    'Donator Messages': 'm1udj4sgwj3fsm2',
 }
 ALLOWED_TABLES = list(TABLE_IDS.keys())
 
@@ -402,6 +402,62 @@ def donation_write_operations(record_id):
         return jsonify({'error': str(e)}), 500
 
 
+
+
+# ============= MESSAGES ROUTES =============
+
+@app.route('/api/messages', methods=['GET'])
+@login_required
+def get_messages():
+    """Get the logged-in donator's own messages, most recent first."""
+    try:
+        headers = {'xc-token': NOCODB_TOKEN}
+        url = nocodb_records_url('Donator Messages')
+
+        response = requests.get(url, headers=headers, params={
+            'limit': 1000,
+            'where': f"(Donator Email,eq,{current_user.email})",
+            'sort': '-Created At'
+        })
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Get messages error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/messages', methods=['POST'])
+@login_required
+@csrf_protect
+def send_message():
+    """Submit a new message. Identity comes from the session, never the request body."""
+    try:
+        data = request.json or {}
+        question = data.get('Question', '').strip()
+
+        if not question:
+            return jsonify({'error': 'Question is required'}), 400
+
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+        url = nocodb_records_url('Donator Messages')
+
+        payload = {
+            'Question': question,
+            'Donator Email': current_user.email,
+            'Status': 'Pending'   # always starts here, regardless of what the client sends
+        }
+
+        response = requests.post(url, headers=headers, json=payload)
+        return jsonify(response.json()), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Send message error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    
 # ============= PASSWORD ROUTES =============
 
 @app.route('/api/auth/password', methods=['POST'])
@@ -1065,6 +1121,9 @@ def serve_profile_picture(filename):
     """Serve a profile picture by filename"""
     safe_name = os.path.basename(filename)  # blocks ../ path traversal
     return send_from_directory(UPLOAD_FOLDER, safe_name)
+
+
+
 
 
 
