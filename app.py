@@ -9,6 +9,11 @@ import os
 from dotenv import load_dotenv
 from db import get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email
 from datetime import datetime
+import os
+import uuid
+from werkzeug.utils import secure_filename
+from PIL import Image
+from flask import send_from_directory
 
 load_dotenv()
 
@@ -898,61 +903,85 @@ def recompute_running_total():
 
     return total
 
-# ============= DONATOR ACCOUNT ROUTES =============
-"""Flask routes for managing donator account information, such as uploading a profile picture, changing password, and updating username"""
-@app.route('/donator/account', methods=['GET'])
-def get_donator_account():
+# ============= ACCOUNT ROUTES =============
+"""Flask routes for managing account information in the donator app, such as uploading a profile picture, changing password, and updating username, NOT stored in the Donator Profiles table, stored in the Account Management table"""
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+MAX_IMAGE_DIMENSION = 1024
+UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads', 'profile_pictures')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB cap, applies globally
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@app.route('/api/auth/profile-picture', methods=['POST'])
+@login_required
+@csrf_protect
+def upload_profile_picture():
+    """Upload/replace the current donator's profile picture"""
     try:
-        url = nocodb_records_url('Donator Profiles')
-        response = requests.get(
-            url, headers={'xc-token': NOCODB_TOKEN},
-            params={'where': f"(Donator Email,eq,{current_user.email})"}
+        if 'picture' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['picture']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Only PNG, JPG, and WEBP images are allowed'}), 400
+
+        # Don't trust the extension - verify it's actually a decodable image
+        try:
+            image = Image.open(file.stream)
+            image.verify()
+            file.stream.seek(0)
+            image = Image.open(file.stream)  # must reopen after verify()
+        except Exception:
+            return jsonify({'error': 'Invalid image file'}), 400
+
+        # Re-encode & resize: strips EXIF/metadata, normalizes format,
+        # and neutralizes any payload hidden in the original file bytes
+        image = image.convert('RGB')
+        image.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION))
+
+        filename = f"{uuid.uuid4().hex}.jpg"  # never use the user-supplied filename
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        image.save(filepath, format='JPEG', quality=85)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT profile_picture FROM donators WHERE id = %s", (current_user.id,))
+        old = cur.fetchone()
+
+        cur.execute(
+            "UPDATE donators SET profile_picture = %s WHERE id = %s",
+            (filename, current_user.id)
         )
-        data = response.json()
-        records = data.get('list', []) if isinstance(data, dict) else data
-        
-        if records:
-            profile = records[0]
-            
-            #  FIX: Sanitize the avatar key before sending it out
-            # Replace 'Avatar' with your exact NocoDB column name
-            avatar_url = profile.get('Avatar', '')
-            if avatar_url and ('unsplash.com' in avatar_url or 'placehold.co' in avatar_url):
-                profile['Avatar'] = '' # Erase the external trigger string
-                
-            return jsonify(profile), 200
-        return jsonify({'error': 'Donator profile not found'}), 404
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        # clean up the old file so uploads don't orphan on disk
+        if old and old['profile_picture']:
+            old_path = os.path.join(UPLOAD_FOLDER, old['profile_picture'])
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        return jsonify({'profile_picture': f'/api/profile-pictures/{filename}'}), 200
+
     except Exception as e:
-        app.logger.error(f"Get donator account error: {e}")
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f"Profile picture upload error: {e}")
+        return jsonify({'error': 'Upload failed'}), 500
 
 
-@app.route('/donator/account', methods=['POST'])
-def update_donator_account():
-    try:
-        url = nocodb_records_url('Donator Profiles')
-        response = requests.get(
-            url, headers={'xc-token': NOCODB_TOKEN},
-            params={'where': f"(Donator Email,eq,{current_user.email})"}
-        )
-        data = response.json()
-        records = data.get('list', []) if isinstance(data, dict) else data
-        if not records:
-            return jsonify({'error': 'Donator profile not found'}), 404
-
-        record_id = records[0]['Id']
-        update_data = request.json
-        update_response = requests.patch(
-            f"{url}/{record_id}",
-            headers={'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'},
-            json=update_data
-        )
-        return jsonify(update_response.json()), update_response.status_code
-    except Exception as e:
-        app.logger.error(f"Update donator account error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-    
+@app.route('/api/profile-pictures/<filename>', methods=['GET'])
+def serve_profile_picture(filename):
+    """Serve a profile picture by filename"""
+    safe_name = os.path.basename(filename)  # blocks ../ path traversal
+    return send_from_directory(UPLOAD_FOLDER, safe_name)
 
 
 
