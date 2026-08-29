@@ -258,9 +258,20 @@ def logout_donator():
 @login_required
 def get_current_donator():
     """Get the currently logged-in donator's info (used by frontend to check login state)"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT profile_picture FROM donators WHERE id = %s", (current_user.id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    picture_path = f"/profile-pictures/{row['profile_picture']}" if row and row['profile_picture'] else None
+
     return jsonify({
         'donator_id': current_user.id,
-        'email': current_user.email
+        'email': current_user.email,
+        'name': current_user.name,
+        'profile_picture': picture_path
     }), 200
 
 
@@ -970,7 +981,7 @@ def upload_profile_picture():
             if os.path.exists(old_path):
                 os.remove(old_path)
 
-        return jsonify({'profile_picture': f'/api/profile-pictures/{filename}'}), 200
+        return jsonify({'profile_picture': f'/profile-pictures/{filename}'}), 200
 
     except Exception as e:
         app.logger.error(f"Profile picture upload error: {e}")
