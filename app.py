@@ -1,4 +1,6 @@
 # imports
+import math
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -8,8 +10,8 @@ import requests
 import os
 from dotenv import load_dotenv
 from db import (
-    get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    init_forum_messages_table, get_channel_history, save_channel_message,
+    get_db_connection, get_intro_threads, init_donators_table, get_donator_by_id, get_donator_by_email,
+    init_forum_messages_table, get_channel_history, init_intro_threads_tables, save_channel_message,
     get_forum_messages_for_moderation, delete_forum_message_by_id, get_intro_thread_by_donator,
     upsert_intro_thread, get_intro_thread_owner, delete_intro_thread_by_id,
     get_intro_replies, add_intro_reply, get_intro_reply_owner, delete_intro_reply_by_id
