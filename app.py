@@ -1,4 +1,7 @@
 # imports
+from gevent import monkey
+monkey.patch_all()
+
 import math
 
 from flask import Flask, request, jsonify
