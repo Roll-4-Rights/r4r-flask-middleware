@@ -9,7 +9,8 @@ import os
 from dotenv import load_dotenv
 from db import (
     get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    init_forum_messages_table, get_channel_history, save_channel_message, list_forum_messages, delete_forum_message
+    init_forum_messages_table, get_channel_history, save_channel_message,
+    get_forum_messages_for_moderation, delete_forum_message_by_id
 )
 from datetime import datetime
 import os
@@ -37,7 +38,7 @@ init_forum_messages_table()
 
 # ============= ENVIRONMENT CONFIG =============
 
-FLASK_ENV = os.environ.get('FLASK_ENV', 'production')init_forum_messages_table()
+FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
 
 ALLOWED_ORIGINS = os.environ.get(
     'ALLOWED_ORIGINS',
@@ -45,6 +46,7 @@ ALLOWED_ORIGINS = os.environ.get(
 ).split(',')
 
 CORS(app, supports_credentials=True, origins=ALLOWED_ORIGINS)
+socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='gevent')
 
 # ============= FLASK-LOGIN SETUP =============
 
@@ -1137,6 +1139,13 @@ def serve_profile_picture(filename):
 
 # ============= FORUM / CHAT (SOCKET.IO) =============
 
+@socketio.on('connect')
+def handle_connect():
+    if not current_user.is_authenticated:
+        app.logger.warning("Rejected unauthenticated Socket.IO connection")
+        return False
+
+
 @socketio.on('join_channel')
 def handle_join_channel(data):
     channel = data.get('channel')
@@ -1159,12 +1168,6 @@ def handle_join_channel(data):
         ]
     })
 
- @socketio.on('connect')
-def handle_connect():
-    if not current_user.is_authenticated:
-        app.logger.warning("Rejected unauthenticated Socket.IO connection")
-        return False   
-
 
 @socketio.on('leave_channel')
 def handle_leave_channel(data):
@@ -1174,26 +1177,6 @@ def handle_leave_channel(data):
 
 
 @socketio.on('send_channel_message')
-def handle_send_channel_message(data):
-    channel = data.get('channel')
-    message = (data.get('message') or '').strip()
-
-    if not channel or not message:
-        return
-
-    saved = save_channel_message(channel, data.get('senderID'), data.get('senderName'), message)
-
-    emit('channel_message', {
-        'id': saved['id'],
-        'channel': saved['channel'],
-        'senderID': saved['sender_id'],
-        'senderName': saved['sender_name'],
-        'message': saved['message'],
-        'timestamp': saved['created_at'].isoformat()
-    }, room=channel)
-
-
-    @socketio.on('send_channel_message')
 def handle_send_channel_message(data):
     channel = data.get('channel')
     message = (data.get('message') or '').strip()
@@ -1213,7 +1196,7 @@ def handle_send_channel_message(data):
     }, room=channel)
 
 
-'''moderation API endpoints'''
+# ============= FORUM MODERATION (admin key required) =============
 
 @app.route('/api/forum-messages', methods=['GET'])
 @require_api_key
@@ -1250,14 +1233,14 @@ def delete_forum_message(message_id):
 
 
 
+# ============= BACKGROUND TASKS =============
+
 if __name__ == '__main__':
     debug_mode = FLASK_ENV == 'development'
-    socketio.run(app, debug=debug_mode, port=5000, host='0.0.0.0')
-
     print("Starting Flask Middleware...")
     print(f"Proxying to NocoDB at {NOCODB_URL}")
     print(f"Debug mode: {debug_mode}")
     print("Token hidden from frontend")
-    app.run(debug=debug_mode, port=5000, host='0.0.0.0')
+    socketio.run(app, debug=debug_mode, port=5000, host='0.0.0.0')
 
 

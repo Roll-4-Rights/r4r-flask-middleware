@@ -13,8 +13,10 @@ def get_db_connection():
         cursor_factory=psycopg2.extras.RealDictCursor
     )
 
+
 def init_donators_table():
-    """Create the donators table if it doesn't already exist. Safe to call every startup."""
+    """Create the donators table if it doesn't already exist, and patch in any
+    columns added after the table was first created. Safe to call every startup."""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -23,12 +25,15 @@ def init_donators_table():
             name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            profile_picture VARCHAR(255),
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
+    cur.execute("ALTER TABLE donators ADD COLUMN IF NOT EXISTS profile_picture VARCHAR(255)")
     conn.commit()
     cur.close()
     conn.close()
+
 
 def get_donator_by_id(donator_id):
     """Fetch a donator by primary key — used by Flask-Login's user_loader."""
@@ -51,27 +56,8 @@ def get_donator_by_email(email):
     conn.close()
     return row
 
-def init_donators_table():
-    """Create the donators table if it doesn't already exist, and patch in any
-    columns added after the table was first created. Safe to call every startup."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS donators (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            profile_picture VARCHAR(255),
-            created_at TIMESTAMP DEFAULT NOW()
-        )
-    """)
-    cur.execute("ALTER TABLE donators ADD COLUMN IF NOT EXISTS profile_picture VARCHAR(255)")
-    conn.commit()
-    cur.close()
-    conn.close()
 
-    def init_forum_messages_table():
+def init_forum_messages_table():
     """Create the forum_messages table if it doesn't already exist. Safe to call every startup."""
     conn = get_db_connection()
     cur = conn.cursor()
@@ -88,9 +74,6 @@ def init_donators_table():
     conn.commit()
     cur.close()
     conn.close()
-
-
-'''forum message handling functions'''
 
 
 def get_channel_history(channel, limit=100):
@@ -130,6 +113,7 @@ def save_channel_message(channel, sender_id, sender_name, message):
     cur.close()
     conn.close()
     return row
+
 
 def get_forum_messages_for_moderation(channel=None, limit=200):
     """Fetch recent forum messages for admin review, optionally filtered to one channel."""
