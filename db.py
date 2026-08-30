@@ -115,6 +115,178 @@ def save_channel_message(channel, sender_id, sender_name, message):
     return row
 
 
+
+def init_intro_threads_tables():
+    """Create the intro thread/reply tables if they don't already exist. Safe to call every startup."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS intro_threads (
+            id SERIAL PRIMARY KEY,
+            donator_id INTEGER NOT NULL UNIQUE,
+            author_name TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS intro_replies (
+            id SERIAL PRIMARY KEY,
+            thread_id INTEGER NOT NULL REFERENCES intro_threads(id) ON DELETE CASCADE,
+            donator_id INTEGER NOT NULL,
+            author_name TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_intro_threads(page=1, per_page=10):
+    """Paginated list of intro threads, newest first, each with its reply count."""
+    offset = (page - 1) * per_page
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS total FROM intro_threads")
+    total = cur.fetchone()['total']
+    cur.execute(
+        """
+        SELECT t.id, t.donator_id, t.author_name, t.title, t.body, t.created_at,
+               COUNT(r.id) AS reply_count
+        FROM intro_threads t
+        LEFT JOIN intro_replies r ON r.thread_id = t.id
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
+        LIMIT %s OFFSET %s
+        """,
+        (per_page, offset)
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows, total
+
+
+def get_intro_thread_by_donator(donator_id):
+    """Fetch the current donator's own intro thread, if they have one."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, donator_id, author_name, title, body, created_at FROM intro_threads WHERE donator_id = %s",
+        (donator_id,)
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def upsert_intro_thread(donator_id, author_name, title, body):
+    """Create the donator's intro thread, or overwrite it if they already have one."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO intro_threads (donator_id, author_name, title, body)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (donator_id)
+        DO UPDATE SET author_name = EXCLUDED.author_name, title = EXCLUDED.title, body = EXCLUDED.body
+        RETURNING id, donator_id, author_name, title, body, created_at
+        """,
+        (donator_id, author_name, title, body)
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row
+
+
+def get_intro_thread_owner(thread_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT donator_id FROM intro_threads WHERE id = %s", (thread_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row['donator_id'] if row else None
+
+
+def delete_intro_thread_by_id(thread_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM intro_threads WHERE id = %s", (thread_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
+
+
+def get_intro_replies(thread_id, page=1, per_page=10):
+    """Paginated replies for one thread, oldest first (natural reading order)."""
+    offset = (page - 1) * per_page
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS total FROM intro_replies WHERE thread_id = %s", (thread_id,))
+    total = cur.fetchone()['total']
+    cur.execute(
+        """
+        SELECT id, thread_id, donator_id, author_name, message, created_at
+        FROM intro_replies WHERE thread_id = %s
+        ORDER BY created_at ASC LIMIT %s OFFSET %s
+        """,
+        (thread_id, per_page, offset)
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows, total
+
+
+def add_intro_reply(thread_id, donator_id, author_name, message):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO intro_replies (thread_id, donator_id, author_name, message)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id, thread_id, donator_id, author_name, message, created_at
+        """,
+        (thread_id, donator_id, author_name, message)
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row
+
+
+def get_intro_reply_owner(reply_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT donator_id FROM intro_replies WHERE id = %s", (reply_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row['donator_id'] if row else None
+
+
+def delete_intro_reply_by_id(reply_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM intro_replies WHERE id = %s", (reply_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
+
+
+
 def get_forum_messages_for_moderation(channel=None, limit=200):
     """Fetch recent forum messages for admin review, optionally filtered to one channel."""
     conn = get_db_connection()
@@ -152,3 +324,5 @@ def delete_forum_message_by_id(message_id):
     cur.close()
     conn.close()
     return deleted
+
+
