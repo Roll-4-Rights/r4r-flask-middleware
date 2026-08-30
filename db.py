@@ -70,3 +70,63 @@ def init_donators_table():
     conn.commit()
     cur.close()
     conn.close()
+
+    def init_forum_messages_table():
+    """Create the forum_messages table if it doesn't already exist. Safe to call every startup."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS forum_messages (
+            id SERIAL PRIMARY KEY,
+            channel TEXT NOT NULL,
+            sender_id TEXT NOT NULL,
+            sender_name TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+'''forum message handling functions'''
+
+
+def get_channel_history(channel, limit=100):
+    """Fetch the most recent messages for a channel, oldest first."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, channel, sender_id, sender_name, message, created_at
+        FROM forum_messages
+        WHERE channel = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (channel, limit)
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return list(reversed(rows))
+
+
+def save_channel_message(channel, sender_id, sender_name, message):
+    """Insert a new chat message and return the saved row, including its real id/timestamp."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO forum_messages (channel, sender_id, sender_name, message)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id, channel, sender_id, sender_name, message, created_at
+        """,
+        (channel, sender_id, sender_name, message)
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row

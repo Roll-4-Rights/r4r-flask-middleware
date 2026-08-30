@@ -7,13 +7,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import os
 from dotenv import load_dotenv
-from db import get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email
+from db import (
+    get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
+    init_forum_messages_table, get_channel_history, save_channel_message
+)
 from datetime import datetime
 import os
 import uuid
 from werkzeug.utils import secure_filename
 from PIL import Image
 from flask import send_from_directory
+from flask_socketio import SocketIO, emit, join_room, leave_room
+
 
 load_dotenv()
 
@@ -28,10 +33,11 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 # Ensure the donators table exists (separate from NocoDB, not visible in its UI)
 init_donators_table()
+init_forum_messages_table()
 
 # ============= ENVIRONMENT CONFIG =============
 
-FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
+FLASK_ENV = os.environ.get('FLASK_ENV', 'production')init_forum_messages_table()
 
 ALLOWED_ORIGINS = os.environ.get(
     'ALLOWED_ORIGINS',
@@ -1129,7 +1135,56 @@ def serve_profile_picture(filename):
 
 
 
+# ============= FORUM / CHAT (SOCKET.IO) =============
 
+@socketio.on('join_channel')
+def handle_join_channel(data):
+    channel = data.get('channel')
+    if not channel:
+        return
+    join_room(channel)
+    history = get_channel_history(channel)
+    emit('channel_history', {
+        'channel': channel,
+        'messages': [
+            {
+                'id': row['id'],
+                'channel': row['channel'],
+                'senderID': row['sender_id'],
+                'senderName': row['sender_name'],
+                'message': row['message'],
+                'timestamp': row['created_at'].isoformat()
+            }
+            for row in history
+        ]
+    })
+
+
+@socketio.on('leave_channel')
+def handle_leave_channel(data):
+    channel = data.get('channel')
+    if channel:
+        leave_room(channel)
+
+
+@socketio.on('send_channel_message')
+def handle_send_channel_message(data):
+    channel = data.get('channel')
+    message = (data.get('message') or '').strip()
+
+    if not channel or not message:
+        return
+
+    saved = save_channel_message(channel, data.get('senderID'), data.get('senderName'), message)
+
+    emit('channel_message', {
+        'id': saved['id'],
+        'channel': saved['channel'],
+        'senderID': saved['sender_id'],
+        'senderName': saved['sender_name'],
+        'message': saved['message'],
+        'timestamp': saved['created_at'].isoformat()
+    }, room=channel)
 
 
 
@@ -1137,7 +1192,8 @@ def serve_profile_picture(filename):
 
 if __name__ == '__main__':
     debug_mode = FLASK_ENV == 'development'
-
+    socketio.run(app, debug=debug_mode, port=5000, host='0.0.0.0')
+    
     print("Starting Flask Middleware...")
     print(f"Proxying to NocoDB at {NOCODB_URL}")
     print(f"Debug mode: {debug_mode}")
