@@ -1068,8 +1068,8 @@ def recompute_running_total():
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 MAX_IMAGE_DIMENSION = 1024
 UPLOAD_FOLDER = os.path.join(
-    os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', app.root_path),
-    'uploads', 'profile_pictures'
+    os.environ.get('UPLOAD_STORAGE_PATH', os.path.join(app.root_path, 'uploads')),
+    'profile_pictures'
 )
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
