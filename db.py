@@ -1,10 +1,17 @@
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool as pg_pool
 import os
 
-def get_db_connection():
-    """Open a direct connection to Postgres (separate from NocoDB's REST API)."""
-    return psycopg2.connect(
+_pool = None
+
+
+def init_pool():
+    """Create the connection pool once, on first use."""
+    global _pool
+    _pool = pg_pool.ThreadedConnectionPool(
+        minconn=2,
+        maxconn=20,
         host=os.environ.get('POSTGRES_HOST'),
         port=os.environ.get('POSTGRES_PORT', 5432),
         dbname=os.environ.get('POSTGRES_DB'),
@@ -12,6 +19,35 @@ def get_db_connection():
         password=os.environ.get('POSTGRES_PASSWORD'),
         cursor_factory=psycopg2.extras.RealDictCursor
     )
+
+
+class _PooledConnection:
+    """Wraps a borrowed connection so every existing conn.close() call site
+    across the app returns it to the pool instead of actually closing it.
+    Everything else (cursor, commit, etc.) passes straight through unchanged."""
+    def __init__(self, real_conn):
+        self._real_conn = real_conn
+
+    def cursor(self, *args, **kwargs):
+        return self._real_conn.cursor(*args, **kwargs)
+
+    def commit(self):
+        self._real_conn.commit()
+
+    def rollback(self):
+        self._real_conn.rollback()
+
+    def close(self):
+        _pool.putconn(self._real_conn)
+
+
+def get_db_connection():
+    """Borrow a connection from the pool instead of opening a fresh one
+    every call. Nothing else changes for callers -- conn.close() now
+    returns the connection to the pool instead of tearing it down."""
+    if _pool is None:
+        init_pool()
+    return _PooledConnection(_pool.getconn())
 
 
 def init_donators_table():
@@ -114,6 +150,44 @@ def save_channel_message(channel, sender_id, sender_name, message):
     conn.close()
     return row
 
+
+def get_forum_messages_for_moderation(channel=None, limit=200):
+    """Fetch recent forum messages for admin review, optionally filtered to one channel."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    if channel:
+        cur.execute(
+            """
+            SELECT id, channel, sender_id, sender_name, message, created_at
+            FROM forum_messages WHERE channel = %s
+            ORDER BY created_at DESC LIMIT %s
+            """,
+            (channel, limit)
+        )
+    else:
+        cur.execute(
+            """
+            SELECT id, channel, sender_id, sender_name, message, created_at
+            FROM forum_messages ORDER BY created_at DESC LIMIT %s
+            """,
+            (limit,)
+        )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def delete_forum_message_by_id(message_id):
+    """Delete a single forum message by id. Returns True if a row was actually removed."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM forum_messages WHERE id = %s", (message_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
 
 
 def init_intro_threads_tables():
@@ -284,45 +358,3 @@ def delete_intro_reply_by_id(reply_id):
     cur.close()
     conn.close()
     return deleted
-
-
-
-def get_forum_messages_for_moderation(channel=None, limit=200):
-    """Fetch recent forum messages for admin review, optionally filtered to one channel."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    if channel:
-        cur.execute(
-            """
-            SELECT id, channel, sender_id, sender_name, message, created_at
-            FROM forum_messages WHERE channel = %s
-            ORDER BY created_at DESC LIMIT %s
-            """,
-            (channel, limit)
-        )
-    else:
-        cur.execute(
-            """
-            SELECT id, channel, sender_id, sender_name, message, created_at
-            FROM forum_messages ORDER BY created_at DESC LIMIT %s
-            """,
-            (limit,)
-        )
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return rows
-
-
-def delete_forum_message_by_id(message_id):
-    """Delete a single forum message by id. Returns True if a row was actually removed."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM forum_messages WHERE id = %s", (message_id,))
-    deleted = cur.rowcount > 0
-    conn.commit()
-    cur.close()
-    conn.close()
-    return deleted
-
-
