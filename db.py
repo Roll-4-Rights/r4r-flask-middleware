@@ -130,3 +130,41 @@ def save_channel_message(channel, sender_id, sender_name, message):
     cur.close()
     conn.close()
     return row
+
+def get_forum_messages_for_moderation(channel=None, limit=200):
+    """Fetch recent forum messages for admin review, optionally filtered to one channel."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    if channel:
+        cur.execute(
+            """
+            SELECT id, channel, sender_id, sender_name, message, created_at
+            FROM forum_messages WHERE channel = %s
+            ORDER BY created_at DESC LIMIT %s
+            """,
+            (channel, limit)
+        )
+    else:
+        cur.execute(
+            """
+            SELECT id, channel, sender_id, sender_name, message, created_at
+            FROM forum_messages ORDER BY created_at DESC LIMIT %s
+            """,
+            (limit,)
+        )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def delete_forum_message_by_id(message_id):
+    """Delete a single forum message by id. Returns True if a row was actually removed."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM forum_messages WHERE id = %s", (message_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted

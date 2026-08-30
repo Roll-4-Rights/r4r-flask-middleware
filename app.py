@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 from db import (
     get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    init_forum_messages_table, get_channel_history, save_channel_message
+    init_forum_messages_table, get_channel_history, save_channel_message, list_forum_messages, delete_forum_message
 )
 from datetime import datetime
 import os
@@ -1159,6 +1159,12 @@ def handle_join_channel(data):
         ]
     })
 
+ @socketio.on('connect')
+def handle_connect():
+    if not current_user.is_authenticated:
+        app.logger.warning("Rejected unauthenticated Socket.IO connection")
+        return False   
+
 
 @socketio.on('leave_channel')
 def handle_leave_channel(data):
@@ -1187,13 +1193,67 @@ def handle_send_channel_message(data):
     }, room=channel)
 
 
+    @socketio.on('send_channel_message')
+def handle_send_channel_message(data):
+    channel = data.get('channel')
+    message = (data.get('message') or '').strip()
+
+    if not channel or not message:
+        return
+
+    saved = save_channel_message(channel, str(current_user.id), current_user.name, message)
+
+    emit('channel_message', {
+        'id': saved['id'],
+        'channel': saved['channel'],
+        'senderID': saved['sender_id'],
+        'senderName': saved['sender_name'],
+        'message': saved['message'],
+        'timestamp': saved['created_at'].isoformat()
+    }, room=channel)
+
+
+'''moderation API endpoints'''
+
+@app.route('/api/forum-messages', methods=['GET'])
+@require_api_key
+def list_forum_messages():
+    """List recent forum messages, optionally filtered with ?channel=, for moderation."""
+    try:
+        channel = request.args.get('channel')
+        limit = int(request.args.get('limit', 200))
+        rows = get_forum_messages_for_moderation(channel=channel, limit=limit)
+        return jsonify([
+            {
+                'id': row['id'], 'channel': row['channel'],
+                'senderID': row['sender_id'], 'senderName': row['sender_name'],
+                'message': row['message'], 'timestamp': row['created_at'].isoformat()
+            }
+            for row in rows
+        ]), 200
+    except Exception as e:
+        app.logger.error(f"List forum messages error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/forum-messages/<int:message_id>', methods=['DELETE'])
+@require_api_key
+def delete_forum_message(message_id):
+    """Delete a single forum message (moderation)."""
+    try:
+        if not delete_forum_message_by_id(message_id):
+            return jsonify({'error': 'Message not found'}), 404
+        return jsonify({'message': 'Deleted'}), 200
+    except Exception as e:
+        app.logger.error(f"Delete forum message error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 
 if __name__ == '__main__':
     debug_mode = FLASK_ENV == 'development'
     socketio.run(app, debug=debug_mode, port=5000, host='0.0.0.0')
-    
+
     print("Starting Flask Middleware...")
     print(f"Proxying to NocoDB at {NOCODB_URL}")
     print(f"Debug mode: {debug_mode}")
