@@ -139,3 +139,22 @@ def list_all_donators():
     cur.close()
     conn.close()
     return rows
+
+def delete_donator_by_id(donator_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM donators WHERE id = %s", (donator_id,))
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        return False
+
+    cur.execute("DELETE FROM forum_messages WHERE sender_id = %s", (str(donator_id),))
+    cur.execute("DELETE FROM intro_replies WHERE donator_id = %s", (donator_id,))
+    cur.execute("DELETE FROM intro_threads WHERE donator_id = %s", (donator_id,))
+    cur.execute("DELETE FROM donators WHERE id = %s", (donator_id,))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return True
