@@ -128,3 +128,14 @@ def clear_forum_messages_by_channel(channel):
     cur.close()
     conn.close()
     return deleted
+
+
+
+def list_all_donators():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email, is_admin, created_at FROM donators ORDER BY created_at DESC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
