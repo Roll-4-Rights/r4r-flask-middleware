@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 from db import (
     clear_forum_messages_by_channel, get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id
+    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id, set_donator_admin_status
 )
 from datetime import datetime
 import os
@@ -1220,7 +1220,7 @@ def delete_donator(donator_id):
         return jsonify({'error': str(e)}), 500
 
 
-    @app.route('/api/admin/set-admin-status', methods=['POST'])
+@app.route('/api/admin/set-admin-status', methods=['POST'])
 @require_api_key
 def set_admin_status():
     """Grant or revoke admin status for a donator account, by email (admin only)."""
