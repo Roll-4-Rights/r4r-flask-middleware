@@ -117,3 +117,14 @@ def delete_forum_message_by_id(message_id):
     cur.close()
     conn.close()
     return deleted
+
+
+def clear_forum_messages_by_channel(channel):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM forum_messages WHERE channel = %s", (channel,))
+    deleted = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted

@@ -8,7 +8,7 @@ import requests
 import os
 from dotenv import load_dotenv
 from db import (
-    get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
+    clear_forum_messages_by_channel, get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
     get_forum_messages_for_moderation, delete_forum_message_by_id
 )
 from datetime import datetime
@@ -1168,6 +1168,22 @@ def delete_forum_message(message_id):
         return jsonify({'message': 'Deleted'}), 200
     except Exception as e:
         app.logger.error(f"Delete forum message error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+
+@app.route('/api/forum-messages', methods=['DELETE'])
+@require_api_key
+def clear_forum_messages():
+    """Delete every message in a channel at once (admin only) — for clearing test data."""
+    try:
+        channel = request.args.get('channel')
+        if not channel:
+            return jsonify({'error': 'channel query param is required'}), 400
+        count = clear_forum_messages_by_channel(channel)
+        return jsonify({'deleted': count}), 200
+    except Exception as e:
+        app.logger.error(f"Clear forum messages error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
