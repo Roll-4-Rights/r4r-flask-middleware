@@ -2,6 +2,7 @@ import psycopg2
 import psycopg2.extras
 from psycopg2 import pool as pg_pool
 import os
+import secrets
 
 _pool = None
 
@@ -41,6 +42,61 @@ def get_db_connection():
     if _pool is None:
         init_pool()
     return _PooledConnection(_pool.getconn())
+
+def init_invite_codes_table():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS invite_codes (
+            id SERIAL PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            email TEXT NOT NULL,
+            used_at TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def create_invite_code(email, days_valid=14):
+    code = secrets.token_urlsafe(24)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO invite_codes (code, email, expires_at)
+        VALUES (%s, %s, NOW() + (%s || ' days')::interval)
+        RETURNING code, email, expires_at
+        """,
+        (code, email.strip().lower(), days_valid)
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row
+
+
+def get_invite_code(code):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT code, email, used_at, expires_at FROM invite_codes WHERE code = %s", (code,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def mark_invite_used(code):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE invite_codes SET used_at = NOW() WHERE code = %s", (code,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def init_donators_table():

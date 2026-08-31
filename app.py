@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 from db import (
     clear_forum_messages_by_channel, get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id, set_donator_admin_status
+    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id, set_donator_admin_status, init_invite_codes_table, create_invite_code, get_invite_code, mark_invite_used
 )
 from datetime import datetime
 import os
@@ -116,6 +116,8 @@ ALLOWED_TABLES = list(TABLE_IDS.keys())
 
 MIDDLEWARE_API_KEY = os.environ.get('MIDDLEWARE_API_KEY')
 
+REGISTRATION_PASSCODE = os.environ.get('REGISTRATION_PASSCODE')
+
 MILESTONE_STEP = 10000
 
 print("Flask Configuration:")
@@ -156,6 +158,7 @@ def validate_table(table_name):
     return table_name in ALLOWED_TABLES
 
 
+
 # ============= HEALTH CHECK =============
 
 @app.route('/api/health', methods=['GET'])
@@ -189,17 +192,39 @@ def health_check():
 @app.route('/api/auth/register', methods=['POST'])
 @csrf_protect
 def register_donator():
-    """Register a new donator account and start a session"""
+    """Register a new donator account and start a session.
+    Requires EITHER a valid personal invite code OR the shared registration passcode."""
     try:
         data = request.json or {}
         name = data.get('name', '').strip()
         email = data.get('email', '').strip().lower()
         password = data.get('password', '')
+        invite_code = data.get('invite_code', '').strip()
+        passcode = data.get('passcode', '').strip()
 
         if not name or not email or not password:
             return jsonify({'error': 'Name, email, and password are required'}), 400
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+        used_invite = None
+
+        if invite_code:
+            invite = get_invite_code(invite_code)
+            if not invite:
+                return jsonify({'error': 'Invalid invite code'}), 403
+            if invite['used_at'] is not None:
+                return jsonify({'error': 'This invite has already been used'}), 403
+            if invite['expires_at'] < datetime.utcnow():
+                return jsonify({'error': 'This invite has expired'}), 403
+            if invite['email'] != email:
+                return jsonify({'error': 'This invite was issued for a different email address'}), 403
+            used_invite = invite_code
+        elif passcode:
+            if not REGISTRATION_PASSCODE or passcode != REGISTRATION_PASSCODE:
+                return jsonify({'error': 'Incorrect registration passcode'}), 403
+        else:
+            return jsonify({'error': 'A valid invite link or registration passcode is required'}), 403
 
         conn = get_db_connection()
         cur = conn.cursor()
@@ -219,6 +244,9 @@ def register_donator():
         conn.commit()
         cur.close()
         conn.close()
+
+        if used_invite:
+            mark_invite_used(used_invite)
 
         login_user(Donator(new_id, name, email), remember=True)
         return jsonify({'name': name, 'email': email}), 201
@@ -259,6 +287,49 @@ def login_donator():
 def logout_donator():
     logout_user()
     return jsonify({'message': 'Logged out'}), 200
+
+
+@app.route('/api/invites', methods=['POST'])
+@require_api_key
+def create_invite():
+    """Generate an invite link for one specific email (admin only)."""
+    try:
+        data = request.json or {}
+        email = data.get('email', '').strip().lower()
+        if not email:
+            return jsonify({'error': 'email is required'}), 400
+
+        invite = create_invite_code(email)
+        link = f"https://donate.roll4rights.duckdns.org/register?invite={invite['code']}"
+        return jsonify({
+            'email': invite['email'],
+            'code': invite['code'],
+            'link': link,
+            'expiresAt': invite['expires_at'].isoformat()
+        }), 201
+    except Exception as e:
+        app.logger.error(f"Create invite error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/verify-invite', methods=['GET'])
+def verify_invite():
+    """Public check the register page uses before showing the form at all."""
+    try:
+        code = request.args.get('code', '')
+        invite = get_invite_code(code)
+
+        if not invite:
+            return jsonify({'valid': False, 'error': 'Invite not found'}), 200
+        if invite['used_at'] is not None:
+            return jsonify({'valid': False, 'error': 'Invite already used'}), 200
+        if invite['expires_at'] < datetime.utcnow():
+            return jsonify({'valid': False, 'error': 'Invite expired'}), 200
+
+        return jsonify({'valid': True, 'email': invite['email']}), 200
+    except Exception as e:
+        app.logger.error(f"Verify invite error: {e}")
+        return jsonify({'valid': False, 'error': 'Something went wrong'}), 500
 
 
 
