@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 from db import (
     clear_forum_messages_by_channel, get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    get_forum_messages_for_moderation, delete_forum_message_by_id
+    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id
 )
 from datetime import datetime
 import os
@@ -1184,6 +1184,39 @@ def clear_forum_messages():
         return jsonify({'deleted': count}), 200
     except Exception as e:
         app.logger.error(f"Clear forum messages error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============= ADMIN: DONATORS =============
+
+@app.route('/api/admin/donators', methods=['GET'])
+@require_api_key
+def list_donators():
+    """List every registered donator (admin only)."""
+    try:
+        rows = list_all_donators()
+        return jsonify([
+            {
+                'id': row['id'], 'name': row['name'], 'email': row['email'],
+                'isAdmin': row['is_admin'], 'createdAt': row['created_at'].isoformat()
+            }
+            for row in rows
+        ]), 200
+    except Exception as e:
+        app.logger.error(f"List donators error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/donators/<int:donator_id>', methods=['DELETE'])
+@require_api_key
+def delete_donator(donator_id):
+    """Permanently remove a donator account and their chat content (admin only)."""
+    try:
+        if not delete_donator_by_id(donator_id):
+            return jsonify({'error': 'No donator found with that id'}), 404
+        return jsonify({'message': 'Deleted'}), 200
+    except Exception as e:
+        app.logger.error(f"Delete donator error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
