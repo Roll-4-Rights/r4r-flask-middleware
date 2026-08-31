@@ -179,3 +179,17 @@ def get_donator_by_email(email):
     cur.close()
     conn.close()
     return row
+
+
+def set_donator_admin_status(email, is_admin):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE donators SET is_admin = %s WHERE email = %s RETURNING id, name, email, is_admin",
+        (is_admin, email.strip().lower())
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row

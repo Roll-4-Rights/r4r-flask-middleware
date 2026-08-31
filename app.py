@@ -1187,7 +1187,7 @@ def clear_forum_messages():
         return jsonify({'error': str(e)}), 500
 
 
-# ============= ADMIN: DONATORS =============
+# ============= ADMIN =============
 
 @app.route('/api/admin/donators', methods=['GET'])
 @require_api_key
@@ -1217,6 +1217,28 @@ def delete_donator(donator_id):
         return jsonify({'message': 'Deleted'}), 200
     except Exception as e:
         app.logger.error(f"Delete donator error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+    @app.route('/api/admin/set-admin-status', methods=['POST'])
+@require_api_key
+def set_admin_status():
+    """Grant or revoke admin status for a donator account, by email (admin only)."""
+    try:
+        data = request.json or {}
+        email = data.get('email', '').strip().lower()
+        is_admin = data.get('is_admin')
+
+        if not email or is_admin is None:
+            return jsonify({'error': 'email and is_admin are required'}), 400
+
+        updated = set_donator_admin_status(email, bool(is_admin))
+        if not updated:
+            return jsonify({'error': 'No donator found with that email'}), 404
+
+        return jsonify({'email': updated['email'], 'name': updated['name'], 'isAdmin': updated['is_admin']}), 200
+    except Exception as e:
+        app.logger.error(f"Set admin status error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
