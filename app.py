@@ -282,7 +282,8 @@ def get_current_donator():
             'donator_id': current_user.id,
             'email': current_user.email,
             'name': current_user.name,
-            'profile_picture': picture_path
+            'profile_picture': picture_path,
+            'is_admin': current_user.is_admin
         }), 200
     except Exception as e:
         app.logger.error(f"Get current donator error: {e}")
