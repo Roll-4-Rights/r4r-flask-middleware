@@ -57,6 +57,7 @@ def init_donators_table():
         )
     """)
     cur.execute("ALTER TABLE donators ADD COLUMN IF NOT EXISTS profile_picture VARCHAR(255)")
+    cur.execute("ALTER TABLE donators ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
     conn.commit()
     cur.close()
     conn.close()
@@ -158,3 +159,23 @@ def delete_donator_by_id(donator_id):
     cur.close()
     conn.close()
     return True
+
+
+def get_donator_by_id(donator_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email, is_admin FROM donators WHERE id = %s", (donator_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def get_donator_by_email(email):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, email, password_hash, is_admin FROM donators WHERE email = %s", (email,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
