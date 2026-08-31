@@ -53,10 +53,11 @@ login_manager.init_app(app)
 
 
 class Donator(UserMixin):
-    def __init__(self, id, name, email):
+    def __init__(self, id, name, email, is_admin=False):
         self.id = id
         self.name = name
         self.email = email
+        self.is_admin = is_admin
 
     def get_id(self):
         return str(self.id)
@@ -67,7 +68,7 @@ def load_user(donator_id):
     row = get_donator_by_id(donator_id)
     if not row:
         return None
-    return Donator(row['id'], row['name'], row['email'])
+    return Donator(row['id'], row['name'], row['email'], row['is_admin'])
 
 
 @login_manager.unauthorized_handler
@@ -244,7 +245,7 @@ def login_donator():
         if not donator or not check_password_hash(donator['password_hash'], password):
             return jsonify({'error': 'Invalid email or password'}), 401
 
-        login_user(Donator(donator['id'], donator['name'], email), remember=True)
+        login_user(Donator(donator['id'], donator['name'], email, donator['is_admin']), remember=True)
         return jsonify({'name': donator['name'], 'email': email}), 200
 
     except Exception as e:
