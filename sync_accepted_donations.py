@@ -64,6 +64,5 @@ def sync_accepted_donations():
         print(f"Synced donation {record_id} to Auction Items")
 
 
-if __name__ == '__main__':            'Description': donation.get('Item Description'),
-
+if __name__ == '__main__':
     sync_accepted_donations()
