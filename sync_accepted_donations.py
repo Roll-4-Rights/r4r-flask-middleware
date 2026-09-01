@@ -1,7 +1,8 @@
 # sync_accepted_donations.py — run periodically via Coolify's Scheduled Tasks
 # on this resource, since NocoDB's automation feature isn't available on this
 # instance's tier. Checks for donations marked Accepted that don't already
-# have a matching Auction Items listing, and creates one.
+# have a matching Auction Items listing, and creates one — including the
+# donator's shipping/location info from their profile.
 
 import os
 import requests
@@ -15,6 +16,7 @@ NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN')
 TABLE_IDS = {
     'Donations and Tracking': 'mxe1093xcatdwzr',
     'Auction Items': 'm02kvrs08uiij89',
+    'Donator Profiles': 'mvga4wzvkiq52xx',
 }
 
 
@@ -22,6 +24,18 @@ def nocodb_records_url(table_name, record_id=None):
     table_id = TABLE_IDS[table_name]
     base = f'{NOCODB_URL}/api/v2/tables/{table_id}/records'
     return f'{base}/{record_id}' if record_id else base
+
+
+def get_donator_profile(donator_email):
+    """Look up a donator's profile by email — returns None if they never submitted one."""
+    headers = {'xc-token': NOCODB_TOKEN}
+    url = nocodb_records_url('Donator Profiles')
+    response = requests.get(url, headers=headers, params={
+        'where': f"(Donator Email,eq,{donator_email})"
+    })
+    data = response.json()
+    records = data.get('list', []) if isinstance(data, dict) else data
+    return records[0] if records else None
 
 
 def sync_accepted_donations():
@@ -37,11 +51,13 @@ def sync_accepted_donations():
 
     write_headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
 
+    # Cache profile lookups within this one run — a donator with several
+    # items being synced at once only needs their profile fetched once
+    profile_cache = {}
+
     for donation in records:
         record_id = donation['Id']
 
-        # Check Auction Items directly for a listing already tagged with
-        # this donation — a real check, not a flag we're hoping stuck
         check_url = nocodb_records_url('Auction Items')
         check_response = requests.get(check_url, headers={'xc-token': NOCODB_TOKEN}, params={
             'where': f"(Source Donation ID,eq,{record_id})"
@@ -50,7 +66,12 @@ def sync_accepted_donations():
         existing = check_data.get('list', []) if isinstance(check_data, dict) else check_data
 
         if existing:
-            continue  # a listing already exists — confirmed, not assumed
+            continue
+
+        donator_email = donation.get('Donator Email')
+        if donator_email not in profile_cache:
+            profile_cache[donator_email] = get_donator_profile(donator_email)
+        profile = profile_cache[donator_email] or {}
 
         auction_response = requests.post(check_url, headers=write_headers, json={
             'Item Name': donation.get('Item Name'),
@@ -60,14 +81,16 @@ def sync_accepted_donations():
             'Category': donation.get('Category'),
             'Starting Bid': donation.get('Starting Bid Price'),
             'Photos': donation.get('Photos'),
-            'Source Donation ID': record_id
+            'Source Donation ID': record_id,
+            'Location': profile.get('Location'),
+            'Shipping Type': profile.get('Shipping Type'),
+            'Estimated Shipping Cost': profile.get('Estimated Shipping Cost'),
+            'Shipping Countries': profile.get('Shipping Countries')
         })
         if auction_response.status_code not in (200, 201):
             print(f"FAILED to create Auction Items listing for donation {record_id}: {auction_response.status_code} {auction_response.text}")
             continue
 
-        # Also flip this checkbox for a human glancing at the table —
-        # purely cosmetic now; duplicate-prevention no longer depends on it
         list_url = nocodb_records_url('Donations and Tracking')
         requests.patch(list_url, headers=write_headers, json={
             'Id': record_id,
