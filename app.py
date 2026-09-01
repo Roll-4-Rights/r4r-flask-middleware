@@ -17,6 +17,7 @@ import uuid
 from werkzeug.utils import secure_filename
 from PIL import Image
 from flask import send_from_directory
+from werkzeug.exceptions import RequestEntityTooLarge
 
 
 load_dotenv()
@@ -579,12 +580,18 @@ def change_password():
 
 @app.route('/api/calendar', methods=['GET'])
 def get_calendar():
-    """Get public calendar events"""
+    """
+    Public calendar events. Only rows with 'Is Active' checked are returned.
+    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Public Calendar')
 
-        response = requests.get(url, headers=headers, params={'limit': 1000, **request.args})
+        response = requests.get(url, headers=headers, params={
+            'limit': 1000,
+            'where': "(Is Active,eq,true)",
+            **request.args
+        })
         data = response.json()
         records = data.get('list', []) if isinstance(data, dict) else data
 
@@ -594,22 +601,22 @@ def get_calendar():
         app.logger.error(f"Get calendar error: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/calendar/team', methods=['GET'])
-def get_team_calendar():
-    """Get team calendar events"""
-    try:
-        headers = {'xc-token': NOCODB_TOKEN}
-        url = nocodb_records_url('Team Calendar')
+# @app.route('/api/calendar/team', methods=['GET'])
+# def get_team_calendar():
+#     """Get team calendar events"""
+#     try:
+#         headers = {'xc-token': NOCODB_TOKEN}
+#         url = nocodb_records_url('Team Calendar')
 
-        response = requests.get(url, headers=headers, params={'limit': 1000, **request.args})
-        data = response.json()
-        records = data.get('list', []) if isinstance(data, dict) else data
+#         response = requests.get(url, headers=headers, params={'limit': 1000, **request.args})
+#         data = response.json()
+#         records = data.get('list', []) if isinstance(data, dict) else data
 
-        return jsonify(records), response.status_code
+#         return jsonify(records), response.status_code
 
-    except Exception as e:
-        app.logger.error(f"Get team calendar error: {e}")
-        return jsonify({'error': str(e)}), 500
+#     except Exception as e:
+#         app.logger.error(f"Get team calendar error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
 # ============= AUCTION ROUTES =============
 
@@ -746,7 +753,7 @@ def place_bid():
         app.logger.error(f"Place bid error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ============= ANNOUNCEMENTS / CAMPAIGN =============
+# ============= ANNOUNCEMENTS =============
 
 @app.route('/api/announcements', methods=['GET'])
 def get_announcements():
@@ -802,6 +809,10 @@ def get_campaign():
         app.logger.error(f"Get campaign error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+
+# ========= Campaign Progress & Info =========
+
 @app.route('/api/campaign', methods=['PATCH'])
 @require_api_key
 def update_campaign():
@@ -816,6 +827,7 @@ def update_campaign():
     except Exception as e:
         app.logger.error(f"Update campaign error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/campaign-progress', methods=['GET'])
 def get_campaign_progress():
@@ -1001,6 +1013,8 @@ def upload_files():
         response = requests.post(url, headers=headers, files=files_data)
         return jsonify(response.json()), response.status_code
 
+    except RequestEntityTooLarge:
+        return jsonify({'error': 'These photos are too large together. Try fewer photos, or smaller file sizes.'}), 413
     except Exception as e:
         app.logger.error(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -1133,7 +1147,7 @@ UPLOAD_FOLDER = os.path.join(
 )
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB cap, applies globally
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB cap, applies globally — sized for up to 6 raw photo uploads
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
