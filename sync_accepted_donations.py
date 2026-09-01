@@ -43,11 +43,14 @@ def sync_accepted_donations():
 
         record_id = donation['Id']
 
-        # Adjust these field names to match your real Auction Items columns
+        # Adjust these field names to match the Auction Items columns
         auction_url = nocodb_records_url('Auction Items')
         requests.post(auction_url, headers=write_headers, json={
-            'Title': donation.get('Item Name'),
+            'Item Name': donation.get('Item Name'),
+            'Donator Email': donation.get('Donator Email'),
+            'Donator Name': donation.get('Donator'),
             'Description': donation.get('Item Description'),
+            'Category': donation.get('Category'),
             'Starting Bid': donation.get('Starting Bid Price'),
             'Photos': donation.get('Photos')
         })
@@ -61,5 +64,6 @@ def sync_accepted_donations():
         print(f"Synced donation {record_id} to Auction Items")
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':            'Description': donation.get('Item Description'),
+
     sync_accepted_donations()
