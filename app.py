@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 from db import (
     clear_forum_messages_by_channel, get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id, set_donator_admin_status, init_invite_codes_table, create_invite_code, get_invite_code, mark_invite_used
+    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id, set_donator_admin_status, init_invite_codes_table, create_invite_code, get_invite_code, mark_invite_used, init_lot_counter, get_next_lot_number
 )
 from datetime import datetime
 import os
@@ -418,7 +418,8 @@ def create_donation():
     try:
         data = request.json or {}
         data['Donator Email'] = current_user.email
-        data['Item Status'] = 'Submitted'  # always starts here regardless of what the client sends
+        data['Item Status'] = 'Submitted'
+        data['Lot Number'] = get_next_lot_number()
 
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
         url = nocodb_records_url('Donations and Tracking')

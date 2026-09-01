@@ -249,3 +249,26 @@ def set_donator_admin_status(email, is_admin):
     cur.close()
     conn.close()
     return row
+
+
+def init_lot_counter():
+    """Create the sequence that hands out globally-unique lot numbers.
+    Sequences are safe under concurrent access by design — no manual locking needed."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("CREATE SEQUENCE IF NOT EXISTS lot_number_seq START 1")
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_next_lot_number():
+    """Atomically returns the next lot number — safe even if two people
+    submit at the exact same instant."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT nextval('lot_number_seq') AS lot_number")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row['lot_number']
