@@ -35,6 +35,7 @@ app.config['SESSION_COOKIE_DOMAIN'] = '.roll4rights.duckdns.org'
 
 # Ensure the donators table exists (separate from NocoDB, not visible in its UI)
 init_donators_table()
+init_lot_counter()
 
 # ============= ENVIRONMENT CONFIG =============
 
