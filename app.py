@@ -1332,6 +1332,66 @@ def set_admin_status():
 
 
 
+@app.route('/api/webhooks/donation-accepted', methods=['POST'])
+def donation_accepted_webhook():
+    """
+    Called automatically by a NocoDB webhook the moment a donation's
+    Item Status is set to 'Accepted' directly in NocoDB's own UI.
+    """
+    try:
+        provided_key = request.headers.get('X-Webhook-Key')
+        if provided_key != MIDDLEWARE_API_KEY:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        payload = request.json or {}
+        app.logger.info(f"Donation-accepted webhook payload: {payload}")
+
+        rows = payload.get('data', {}).get('rows', [])
+        if not rows:
+            app.logger.error("No rows found in webhook payload — check the logged payload above")
+            return jsonify({'error': 'Unrecognized payload shape'}), 400
+
+        record_id = rows[0].get('Id')
+        if not record_id:
+            return jsonify({'error': 'No Id in webhook payload row'}), 400
+
+        # Re-fetch the authoritative, current version of the record directly —
+        # more reliable than trusting field values straight out of the webhook body
+        get_url = nocodb_records_url('Donations and Tracking', record_id)
+        existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
+        if existing.status_code != 200:
+            return jsonify({'error': 'Donation not found'}), 404
+        donation = existing.json()
+
+        if donation.get('Item Status') != 'Accepted':
+            return jsonify({'message': 'Not accepted, ignoring'}), 200
+        if donation.get('Synced to Auction'):
+            return jsonify({'message': 'Already synced, ignoring'}), 200
+
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+
+        # Adjust these field names to match your real Auction Items columns
+        auction_url = nocodb_records_url('Auction Items')
+        requests.post(auction_url, headers=headers, json={
+            'Title': donation.get('Item Name'),
+            'Description': donation.get('Item Description'),
+            'Starting Bid': donation.get('Starting Bid Price'),
+            'Photos': donation.get('Photos')
+        })
+
+        list_url = nocodb_records_url('Donations and Tracking')
+        requests.patch(list_url, headers=headers, json={
+            'Id': record_id,
+            'Synced to Auction': True
+        })
+
+        return jsonify({'message': 'Synced to Auction Items'}), 200
+
+    except Exception as e:
+        app.logger.error(f"Donation accepted webhook error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ============= BACKGROUND TASKS =============
 
 if __name__ == '__main__':
