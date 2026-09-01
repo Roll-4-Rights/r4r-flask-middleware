@@ -43,9 +43,8 @@ def sync_accepted_donations():
 
         record_id = donation['Id']
 
-        # Adjust these field names to match the Auction Items columns
         auction_url = nocodb_records_url('Auction Items')
-        requests.post(auction_url, headers=write_headers, json={
+        auction_response = requests.post(auction_url, headers=write_headers, json={
             'Item Name': donation.get('Item Name'),
             'Donator Email': donation.get('Donator Email'),
             'Donator Name': donation.get('Donator'),
@@ -54,14 +53,19 @@ def sync_accepted_donations():
             'Starting Bid': donation.get('Starting Bid Price'),
             'Photos': donation.get('Photos')
         })
+        if auction_response.status_code not in (200, 201):
+            print(f"FAILED to create Auction Items listing for donation {record_id}: {auction_response.status_code} {auction_response.text}")
+            continue  # don't mark it synced if the listing itself never actually got created
 
         list_url = nocodb_records_url('Donations and Tracking')
-        requests.patch(list_url, headers=write_headers, json={
+        flag_response = requests.patch(list_url, headers=write_headers, json={
             'Id': record_id,
             'Synced to Auction': True
         })
-
-        print(f"Synced donation {record_id} to Auction Items")
+        if flag_response.status_code not in (200, 201):
+            print(f"WARNING: listed donation {record_id}, but FAILED to mark it synced: {flag_response.status_code} {flag_response.text} — it WILL duplicate next run unless this is fixed!")
+        else:
+            print(f"Synced donation {record_id} to Auction Items")
 
 
 if __name__ == '__main__':
