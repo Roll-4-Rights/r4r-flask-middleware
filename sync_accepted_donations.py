@@ -1,7 +1,7 @@
 # sync_accepted_donations.py — run periodically via Coolify's Scheduled Tasks
 # on this resource, since NocoDB's automation feature isn't available on this
-# instance's tier. Checks for donations marked Accepted that haven't yet been
-# copied to Auction Items, and copies them.
+# instance's tier. Checks for donations marked Accepted that don't already
+# have a matching Auction Items listing, and creates one.
 
 import os
 import requests
@@ -38,34 +38,43 @@ def sync_accepted_donations():
     write_headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
 
     for donation in records:
-        if donation.get('Synced to Auction'):
-            continue  # already handled on a previous run
-
         record_id = donation['Id']
 
-        auction_url = nocodb_records_url('Auction Items')
-        auction_response = requests.post(auction_url, headers=write_headers, json={
+        # Check Auction Items directly for a listing already tagged with
+        # this donation — a real check, not a flag we're hoping stuck
+        check_url = nocodb_records_url('Auction Items')
+        check_response = requests.get(check_url, headers={'xc-token': NOCODB_TOKEN}, params={
+            'where': f"(Source Donation ID,eq,{record_id})"
+        })
+        check_data = check_response.json()
+        existing = check_data.get('list', []) if isinstance(check_data, dict) else check_data
+
+        if existing:
+            continue  # a listing already exists — confirmed, not assumed
+
+        auction_response = requests.post(check_url, headers=write_headers, json={
             'Item Name': donation.get('Item Name'),
             'Donator Email': donation.get('Donator Email'),
             'Donator Name': donation.get('Donator'),
             'Description': donation.get('Item Description'),
             'Category': donation.get('Category'),
             'Starting Bid': donation.get('Starting Bid Price'),
-            'Photos': donation.get('Photos')
+            'Photos': donation.get('Photos'),
+            'Source Donation ID': record_id
         })
         if auction_response.status_code not in (200, 201):
             print(f"FAILED to create Auction Items listing for donation {record_id}: {auction_response.status_code} {auction_response.text}")
-            continue  # don't mark it synced if the listing itself never actually got created
+            continue
 
+        # Also flip this checkbox for a human glancing at the table —
+        # purely cosmetic now; duplicate-prevention no longer depends on it
         list_url = nocodb_records_url('Donations and Tracking')
-        flag_response = requests.patch(list_url, headers=write_headers, json={
+        requests.patch(list_url, headers=write_headers, json={
             'Id': record_id,
             'Synced to Auction': True
         })
-        if flag_response.status_code not in (200, 201):
-            print(f"WARNING: listed donation {record_id}, but FAILED to mark it synced: {flag_response.status_code} {flag_response.text} — it WILL duplicate next run unless this is fixed!")
-        else:
-            print(f"Synced donation {record_id} to Auction Items")
+
+        print(f"Synced donation {record_id} to Auction Items")
 
 
 if __name__ == '__main__':
