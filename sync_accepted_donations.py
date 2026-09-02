@@ -1,8 +1,10 @@
 # sync_accepted_donations.py — run periodically via Coolify's Scheduled Tasks
 # on this resource, since NocoDB's automation feature isn't available on this
-# instance's tier. Checks for donations marked Accepted that don't already
-# have a matching Auction Items listing, and creates one — including the
-# donator's shipping/location info from their profile.
+# instance's tier. Creates an Auction Items listing for any donation marked
+# Accepted that doesn't have one yet, and keeps an existing listing's fields
+# in sync with the donation and the donator's profile — since a donator can
+# no longer edit either directly once an admin has acted on the item, this
+# can only ever reflect an admin's own deliberate change.
 
 import os
 import requests
@@ -51,8 +53,6 @@ def sync_accepted_donations():
 
     write_headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
 
-    # Cache profile lookups within this one run — a donator with several
-    # items being synced at once only needs their profile fetched once
     profile_cache = {}
 
     for donation in records:
@@ -63,29 +63,53 @@ def sync_accepted_donations():
             'where': f"(Source Donation ID,eq,{record_id})"
         })
         check_data = check_response.json()
-        existing = check_data.get('list', []) if isinstance(check_data, dict) else check_data
-
-        if existing:
-            continue
+        existing_records = check_data.get('list', []) if isinstance(check_data, dict) else check_data
 
         donator_email = donation.get('Donator Email')
         if donator_email not in profile_cache:
             profile_cache[donator_email] = get_donator_profile(donator_email)
         profile = profile_cache[donator_email] or {}
 
-        auction_response = requests.post(check_url, headers=write_headers, json={
+        all_fields = {
             'Item Name': donation.get('Item Name'),
-            'Donator Email': donation.get('Donator Email'),
-            'Donator Name': donation.get('Donator'),
             'Description': donation.get('Item Description'),
             'Category': donation.get('Category'),
             'Starting Bid': donation.get('Starting Bid Price'),
             'Photos': donation.get('Photos'),
-            'Source Donation ID': record_id,
             'Location': profile.get('Location'),
             'Shipping Type': profile.get('Shipping Type'),
             'Estimated Shipping Cost': profile.get('Estimated Shipping Cost'),
             'Shipping Countries': profile.get('Shipping Countries')
+        }
+
+        if existing_records:
+            existing = existing_records[0]
+
+            # Never touch a listing once it's closed — even from a direct
+            # NocoDB edit by an admin, nothing should change on something
+            # people already won
+            if existing.get('Status') == 'closed':
+                continue
+
+            changed = any(existing.get(k) != v for k, v in all_fields.items())
+            if not changed:
+                continue
+
+            update_response = requests.patch(check_url, headers=write_headers, json={
+                'Id': existing['Id'],
+                **all_fields
+            })
+            if update_response.status_code not in (200, 201):
+                print(f"FAILED to update listing for donation {record_id}: {update_response.status_code} {update_response.text}")
+            else:
+                print(f"Updated listing for donation {record_id}")
+            continue
+
+        auction_response = requests.post(check_url, headers=write_headers, json={
+            'Donator Email': donation.get('Donator Email'),
+            'Donator Name': donation.get('Donator'),
+            'Source Donation ID': record_id,
+            **all_fields
         })
         if auction_response.status_code not in (200, 201):
             print(f"FAILED to create Auction Items listing for donation {record_id}: {auction_response.status_code} {auction_response.text}")

@@ -214,8 +214,8 @@ TABLE_SCHEMAS = {
             {"title": "Website", "uidt": "URL"},
             {"title": "Shipping Type", "uidt": "SingleSelect", "colOptions": {
                 "options": [
-                    {"title": "donator_pays"},
-                    {"title": "winner_pays"}
+                    {"title": "Donator pays shipping"},
+                    {"title": "Winner pays shipping"}
                 ]
             }},
             {"title": "Estimated Shipping Cost", "uidt": "SingleLineText"},

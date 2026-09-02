@@ -457,7 +457,10 @@ def get_donation(record_id):
 @login_required
 @csrf_protect
 def donation_write_operations(record_id):
-    """Update or delete a specific donation — only if it belongs to the logged-in donator"""
+    """Update or delete a specific donation — only if it belongs to the logged-in donator,
+    and only while it's still awaiting review. Once an admin has acted on it (any status
+    other than the initial 'Submitted'), the donator can no longer edit or delete it directly —
+    they'd need an admin to revert its status first."""
     try:
         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
 
@@ -465,6 +468,10 @@ def donation_write_operations(record_id):
         existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
         if existing.status_code != 200 or existing.json().get('Donator Email') != current_user.email:
             return jsonify({'error': 'Not found'}), 404
+
+        current_status = existing.json().get('Item Status')
+        if current_status != 'Submitted':
+            return jsonify({'error': 'This item has already been reviewed and can no longer be edited directly. Contact an admin if changes are needed.'}), 403
 
         list_url = nocodb_records_url('Donations and Tracking')
 
@@ -1149,7 +1156,7 @@ UPLOAD_FOLDER = os.path.join(
 )
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB cap, applies globally — sized for up to 6 raw photo uploads
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
