@@ -274,6 +274,8 @@ def get_next_lot_number():
     return row['lot_number']
 
 
+# ============= BIDDERS =============
+
 def init_bidders_table():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -335,6 +337,8 @@ def display_name_exists(display_name):
     return exists
 
 
+# ============= BIDDER LOGIN LINKS (passwordless) =============
+
 def init_bidder_login_links_table():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -383,6 +387,8 @@ def mark_login_link_used(token):
     conn.close()
 
 
+# ============= WINNER CLAIMS =============
+
 def init_winner_claims_table():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -398,11 +404,32 @@ def init_winner_claims_table():
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
-    # in case this table already existed from before this column was added
     cur.execute("ALTER TABLE winner_claims ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'")
     conn.commit()
     cur.close()
     conn.close()
+
+
+def create_winner_claim(token, bidder_id, item_id, amount, expires_at):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO winner_claims (token, bidder_id, item_id, amount, expires_at) VALUES (%s, %s, %s, %s, %s)",
+        (token, bidder_id, item_id, amount, expires_at)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_winner_claim(token):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM winner_claims WHERE token = %s", (token,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
 
 
 def mark_winner_claim_used(token):
