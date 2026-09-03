@@ -272,3 +272,177 @@ def get_next_lot_number():
     cur.close()
     conn.close()
     return row['lot_number']
+
+
+def init_bidders_table():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bidders (
+            id SERIAL PRIMARY KEY,
+            display_name TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            country TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_bidder_by_id(bidder_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM bidders WHERE id = %s", (bidder_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def get_bidder_by_email(email):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM bidders WHERE email = %s", (email,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def create_bidder(display_name, email, country):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO bidders (display_name, email, country) VALUES (%s, %s, %s) RETURNING *",
+        (display_name, email, country)
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row
+
+
+def display_name_exists(display_name):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM bidders WHERE display_name = %s", (display_name,))
+    exists = cur.fetchone() is not None
+    cur.close()
+    conn.close()
+    return exists
+
+
+def init_bidder_login_links_table():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bidder_login_links (
+            token TEXT PRIMARY KEY,
+            bidder_id INTEGER NOT NULL REFERENCES bidders(id),
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def create_login_link(token, bidder_id, expires_at):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO bidder_login_links (token, bidder_id, expires_at) VALUES (%s, %s, %s)",
+        (token, bidder_id, expires_at)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_login_link(token):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM bidder_login_links WHERE token = %s", (token,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def mark_login_link_used(token):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE bidder_login_links SET used_at = NOW() WHERE token = %s", (token,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def init_winner_claims_table():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS winner_claims (
+            token TEXT PRIMARY KEY,
+            bidder_id INTEGER NOT NULL REFERENCES bidders(id),
+            item_id INTEGER NOT NULL,
+            amount NUMERIC NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    # in case this table already existed from before this column was added
+    cur.execute("ALTER TABLE winner_claims ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'")
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def mark_winner_claim_used(token):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE winner_claims SET used_at = NOW(), status = 'completed' WHERE token = %s", (token,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_expired_pending_claims():
+    """Claims nobody responded to in time — need to move to the next bidder."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM winner_claims
+        WHERE status = 'pending' AND used_at IS NULL AND expires_at < NOW()
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def mark_winner_claim_expired(token):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE winner_claims SET status = 'expired' WHERE token = %s", (token,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_forfeited_bidder_ids_for_item(item_id):
+    """Bidders who already had (and blew) their chance on this item — don't offer it to them again."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT bidder_id FROM winner_claims WHERE item_id = %s AND status = 'expired'", (item_id,))
+    ids = [row['bidder_id'] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return ids

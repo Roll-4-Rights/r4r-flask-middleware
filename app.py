@@ -9,15 +9,23 @@ import os
 from dotenv import load_dotenv
 from db import (
     clear_forum_messages_by_channel, get_db_connection, init_donators_table, get_donator_by_id, get_donator_by_email,
-    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id, set_donator_admin_status, init_invite_codes_table, create_invite_code, get_invite_code, mark_invite_used, init_lot_counter, get_next_lot_number
+    get_forum_messages_for_moderation, delete_forum_message_by_id, list_all_donators, delete_donator_by_id, set_donator_admin_status, init_invite_codes_table, create_invite_code, get_invite_code, mark_invite_used, init_lot_counter, get_next_lot_number,
+    init_bidders_table, get_bidder_by_id, get_bidder_by_email, create_bidder, display_name_exists,
+    init_bidder_login_links_table, create_login_link, get_login_link, mark_login_link_used,
+    init_winner_claims_table, create_winner_claim, get_winner_claim, mark_winner_claim_used
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import uuid
+import secrets
+import random
+import smtplib
+from email.mime.text import MIMEText
 from werkzeug.utils import secure_filename
 from PIL import Image
 from flask import send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
+from flask import abort
 
 
 load_dotenv()
@@ -36,6 +44,9 @@ app.config['SESSION_COOKIE_DOMAIN'] = '.roll4rights.duckdns.org'
 # Ensure the donators table exists (separate from NocoDB, not visible in its UI)
 init_donators_table()
 init_lot_counter()
+init_bidders_table()
+init_bidder_login_links_table()
+init_winner_claims_table()
 
 # ============= ENVIRONMENT CONFIG =============
 
@@ -62,15 +73,34 @@ class Donator(UserMixin):
         self.is_admin = is_admin
 
     def get_id(self):
-        return str(self.id)
+        return f'donator:{self.id}'
+
+
+class Bidder(UserMixin):
+    def __init__(self, id, display_name, email, country):
+        self.id = id
+        self.display_name = display_name
+        self.email = email
+        self.country = country
+
+    def get_id(self):
+        return f'bidder:{self.id}'
 
 
 @login_manager.user_loader
-def load_user(donator_id):
-    row = get_donator_by_id(donator_id)
-    if not row:
+def load_user(prefixed_id):
+    try:
+        kind, raw_id = prefixed_id.split(':', 1)
+    except ValueError:
         return None
-    return Donator(row['id'], row['name'], row['email'], row['is_admin'])
+
+    if kind == 'donator':
+        row = get_donator_by_id(raw_id)
+        return Donator(row['id'], row['name'], row['email'], row['is_admin']) if row else None
+    elif kind == 'bidder':
+        row = get_bidder_by_id(raw_id)
+        return Bidder(row['id'], row['display_name'], row['email'], row['country']) if row else None
+    return None
 
 
 @login_manager.unauthorized_handler
@@ -113,6 +143,7 @@ TABLE_IDS = {
     'Bids': 'mw3pqffp5qhrrjj',
     'Donator FAQs': 'mrsh3g2gm19ytlf',
     'Donator Messages': 'm1udj4sgwj3fsm2',
+    'Winners': 'mtzb1af2f49qtyz'
 }
 ALLOWED_TABLES = list(TABLE_IDS.keys())
 
@@ -631,27 +662,41 @@ def get_calendar():
 
 @app.route('/api/auction/items', methods=['GET'])
 def get_auction_items():
-    """Get all auction items"""
+    """Get all auction items, keep it secret, keep it safe."""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Auction Items')
 
         response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        bidder_country = current_user.country if isinstance(current_user, Bidder) else None
+        items = [transform_auction_item(r, bidder_country) for r in records]
+
+        return jsonify({
+            'list': items,
+            'pageInfo': data.get('pageInfo') if isinstance(data, dict) else None
+        }), response.status_code
 
     except Exception as e:
         app.logger.error(f"Get auction items error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/auction/items/<item_id>', methods=['GET'])
 def get_auction_item(item_id):
-    """Get a single auction item by ID"""
+    """Get a single auction item, reshaped for public display."""
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Auction Items', item_id)
 
         response = requests.get(url, headers=headers)
-        return jsonify(response.json()), response.status_code
+        if response.status_code != 200:
+            return jsonify(response.json()), response.status_code
+
+        bidder_country = current_user.country if isinstance(current_user, Bidder) else None
+        return jsonify(transform_auction_item(response.json(), bidder_country)), 200
 
     except Exception as e:
         app.logger.error(f"Get auction item error: {e}")
@@ -708,15 +753,18 @@ def get_auction_bids():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/auction/bids', methods=['POST'])
+@login_required
+@csrf_protect
 def place_bid():
-    """Place a new bid (public - no API key required, but validated)."""
+    """Place a bid. Bidder identity comes entirely from the session, never the request body."""
     try:
+        if not isinstance(current_user, Bidder):
+            return jsonify({'error': 'Only registered bidders can place bids'}), 403
+
         data = request.json or {}
 
-        required_fields = ['item_id', 'bidder_name', 'bidder_email', 'amount']
-        missing = [f for f in required_fields if f not in data or data[f] in (None, '')]
-        if missing:
-            return jsonify({'error': f'Missing required fields: {", ".join(missing)}'}), 400
+        if 'item_id' not in data or 'amount' not in data:
+            return jsonify({'error': 'item_id and amount are required'}), 400
 
         try:
             amount = float(data['amount'])
@@ -740,23 +788,35 @@ def place_bid():
             return jsonify({'error': 'Auction item not found'}), 404
         item = item_resp.json()
 
+        shipping_countries = item.get('Shipping Countries') or ''
+        allowed = [c.strip().lower() for c in shipping_countries.split(',') if c.strip()]
+        if allowed and current_user.country.strip().lower() not in allowed:
+            return jsonify({'error': 'This item cannot ship to your country'}), 403
+
         current_bid = float(item.get('Current Bid') or item.get('Starting Bid') or 0)
         if amount <= current_bid:
             return jsonify({'error': f'Bid must be higher than the current bid (${current_bid:.2f})'}), 400
 
-        bid_response = requests.post(nocodb_records_url('Bids'), headers=headers, json=data)
+        bid_payload = {
+            'Item Id': item_id_int,
+            'Bidder Display Name': current_user.display_name,
+            'Bidder Id': current_user.id,
+            'Amount': amount,
+        }
+        bid_response = requests.post(nocodb_records_url('Bids'), headers=headers, json=bid_payload)
         if bid_response.status_code not in (200, 201):
             return jsonify(bid_response.json()), bid_response.status_code
 
         requests.patch(nocodb_records_url('Auction Items'), headers=headers, json={
             'Id': item_id_int,
             'Current Bid': amount,
-            'Current Bidder Name': data['bidder_name']
+            'Current Bidder Name': current_user.display_name,
+            'Current Bidder Id': current_user.id
         })
 
         recompute_running_total()
 
-        return jsonify(bid_response.json()), bid_response.status_code
+        return jsonify({'message': 'Bid placed', 'amount': amount}), 201
 
     except Exception as e:
         app.logger.error(f"Place bid error: {e}")
@@ -817,10 +877,6 @@ def get_campaign():
     except Exception as e:
         app.logger.error(f"Get campaign error: {e}")
         return jsonify({'error': str(e)}), 500
-
-
-
-# ========= Campaign Progress & Info =========
 
 @app.route('/api/campaign', methods=['PATCH'])
 @require_api_key
@@ -1339,64 +1395,66 @@ def set_admin_status():
 
 
 
-@app.route('/api/webhooks/donation-accepted', methods=['POST'])
-def donation_accepted_webhook():
-    """
-    Called automatically by a NocoDB webhook the moment a donation's
-    Item Status is set to 'Accepted' directly in NocoDB's own UI.
-    """
-    try:
-        provided_key = request.headers.get('X-Webhook-Key')
-        if provided_key != MIDDLEWARE_API_KEY:
-            return jsonify({'error': 'Unauthorized'}), 401
+# This is only useful on the paid tier of nocodb
 
-        payload = request.json or {}
-        app.logger.info(f"Donation-accepted webhook payload: {payload}")
+# @app.route('/api/webhooks/donation-accepted', methods=['POST'])
+# def donation_accepted_webhook():
+#     """
+#     Called automatically by a NocoDB webhook the moment a donation's
+#     Item Status is set to 'Accepted' directly in NocoDB's own UI.
+#     """
+#     try:
+#         provided_key = request.headers.get('X-Webhook-Key')
+#         if provided_key != MIDDLEWARE_API_KEY:
+#             return jsonify({'error': 'Unauthorized'}), 401
 
-        rows = payload.get('data', {}).get('rows', [])
-        if not rows:
-            app.logger.error("No rows found in webhook payload — check the logged payload above")
-            return jsonify({'error': 'Unrecognized payload shape'}), 400
+#         payload = request.json or {}
+#         app.logger.info(f"Donation-accepted webhook payload: {payload}")
 
-        record_id = rows[0].get('Id')
-        if not record_id:
-            return jsonify({'error': 'No Id in webhook payload row'}), 400
+#         rows = payload.get('data', {}).get('rows', [])
+#         if not rows:
+#             app.logger.error("No rows found in webhook payload — check the logged payload above")
+#             return jsonify({'error': 'Unrecognized payload shape'}), 400
 
-        # Re-fetch the authoritative, current version of the record directly —
-        # more reliable than trusting field values straight out of the webhook body
-        get_url = nocodb_records_url('Donations and Tracking', record_id)
-        existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
-        if existing.status_code != 200:
-            return jsonify({'error': 'Donation not found'}), 404
-        donation = existing.json()
+#         record_id = rows[0].get('Id')
+#         if not record_id:
+#             return jsonify({'error': 'No Id in webhook payload row'}), 400
 
-        if donation.get('Item Status') != 'Accepted':
-            return jsonify({'message': 'Not accepted, ignoring'}), 200
-        if donation.get('Synced to Auction'):
-            return jsonify({'message': 'Already synced, ignoring'}), 200
+#         # Re-fetch the authoritative, current version of the record directly —
+#         # more reliable than trusting field values straight out of the webhook body
+#         get_url = nocodb_records_url('Donations and Tracking', record_id)
+#         existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
+#         if existing.status_code != 200:
+#             return jsonify({'error': 'Donation not found'}), 404
+#         donation = existing.json()
 
-        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+#         if donation.get('Item Status') != 'Accepted':
+#             return jsonify({'message': 'Not accepted, ignoring'}), 200
+#         if donation.get('Synced to Auction'):
+#             return jsonify({'message': 'Already synced, ignoring'}), 200
 
-        # Adjust these field names to match your real Auction Items columns
-        auction_url = nocodb_records_url('Auction Items')
-        requests.post(auction_url, headers=headers, json={
-            'Title': donation.get('Item Name'),
-            'Description': donation.get('Item Description'),
-            'Starting Bid': donation.get('Starting Bid Price'),
-            'Photos': donation.get('Photos')
-        })
+#         headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
 
-        list_url = nocodb_records_url('Donations and Tracking')
-        requests.patch(list_url, headers=headers, json={
-            'Id': record_id,
-            'Synced to Auction': True
-        })
+#         # Adjust these field names to match your real Auction Items columns
+#         auction_url = nocodb_records_url('Auction Items')
+#         requests.post(auction_url, headers=headers, json={
+#             'Title': donation.get('Item Name'),
+#             'Description': donation.get('Item Description'),
+#             'Starting Bid': donation.get('Starting Bid Price'),
+#             'Photos': donation.get('Photos')
+#         })
 
-        return jsonify({'message': 'Synced to Auction Items'}), 200
+#         list_url = nocodb_records_url('Donations and Tracking')
+#         requests.patch(list_url, headers=headers, json={
+#             'Id': record_id,
+#             'Synced to Auction': True
+#         })
 
-    except Exception as e:
-        app.logger.error(f"Donation accepted webhook error: {e}")
-        return jsonify({'error': str(e)}), 500
+#         return jsonify({'message': 'Synced to Auction Items'}), 200
+
+#     except Exception as e:
+#         app.logger.error(f"Donation accepted webhook error: {e}")
+#         return jsonify({'error': str(e)}), 500
 
 
 # ============= BACKGROUND TASKS =============
