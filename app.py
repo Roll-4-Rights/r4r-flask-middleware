@@ -54,7 +54,7 @@ FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
 
 ALLOWED_ORIGINS = os.environ.get(
     'ALLOWED_ORIGINS',
-    'http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:3001'
+    'https://auction.roll4rights.duckdns.org,https://donate.roll4rights.duckdns.org'
 ).split(',')
 
 CORS(app, supports_credentials=True, origins=ALLOWED_ORIGINS)
