@@ -119,25 +119,6 @@ def init_donators_table():
     conn.close()
 
 
-def get_donator_by_id(donator_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, email FROM donators WHERE id = %s", (donator_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row
-
-
-def get_donator_by_email(email):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, email, password_hash FROM donators WHERE email = %s", (email,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row
-
 
 def get_forum_messages_for_moderation(channel=None, limit=200):
     conn = get_db_connection()

@@ -187,11 +187,6 @@ def require_api_key(f):
     return decorated
 
 
-def validate_table(table_name):
-    return table_name in ALLOWED_TABLES
-
-
-
 # ============= HEALTH CHECK =============
 
 @app.route('/api/health', methods=['GET'])
@@ -813,14 +808,172 @@ def place_bid():
             'Current Bidder Name': current_user.display_name,
             'Current Bidder Id': current_user.id
         })
-
-        recompute_running_total()
-
         return jsonify({'message': 'Bid placed', 'amount': amount}), 201
-
     except Exception as e:
         app.logger.error(f"Place bid error: {e}")
         return jsonify({'error': str(e)}), 500
+
+    
+
+
+# ============= BIDDER AUTH ROUTES (passwordless) =============
+
+@app.route('/api/bidder/request-login', methods=['POST'])
+@csrf_protect
+def bidder_request_login():
+    try:
+        data = request.json or {}
+        email = data.get('email', '').strip().lower()
+        country = data.get('country', '').strip()
+
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+
+        bidder = get_bidder_by_email(email)
+
+        if not bidder:
+            if not country:
+                return jsonify({'error': 'Country is required for first-time bidders'}), 400
+            display_name = generate_display_name()
+            bidder = create_bidder(display_name, email, country)
+
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + timedelta(minutes=15)
+        create_login_link(token, bidder['id'], expires_at)
+
+        link = f"{AUCTION_APP_URL}/login/verify?token={token}"
+        send_email(
+            email,
+            "Your Roll4Rights auction sign-in link",
+            f"Click this link to sign in as {bidder['display_name']}:\n\n{link}\n\n"
+            f"This link expires in 15 minutes and can only be used once."
+        )
+
+        return jsonify({'message': 'Login link sent'}), 200
+
+    except Exception as e:
+        app.logger.error(f"Bidder request login error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bidder/verify-login', methods=['POST'])
+@csrf_protect
+def bidder_verify_login():
+    try:
+        data = request.json or {}
+        token = data.get('token', '').strip()
+
+        link = get_login_link(token)
+        if not link:
+            return jsonify({'error': 'Invalid login link'}), 403
+        if link['used_at'] is not None:
+            return jsonify({'error': 'This login link has already been used'}), 403
+        if link['expires_at'] < datetime.utcnow():
+            return jsonify({'error': 'This login link has expired'}), 403
+
+        bidder = get_bidder_by_id(link['bidder_id'])
+        if not bidder:
+            return jsonify({'error': 'Account not found'}), 404
+
+        mark_login_link_used(token)
+        login_user(Bidder(bidder['id'], bidder['display_name'], bidder['email'], bidder['country']), remember=True)
+
+        return jsonify({'display_name': bidder['display_name'], 'country': bidder['country']}), 200
+
+    except Exception as e:
+        app.logger.error(f"Bidder verify login error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bidder/me', methods=['GET'])
+@login_required
+def get_current_bidder():
+    if not isinstance(current_user, Bidder):
+        return jsonify({'error': 'Not logged in as a bidder'}), 403
+    return jsonify({'display_name': current_user.display_name, 'country': current_user.country}), 200
+
+
+@app.route('/api/bidder/logout', methods=['POST'])
+@login_required
+@csrf_protect
+def bidder_logout():
+    logout_user()
+    return jsonify({'message': 'Logged out'}), 200
+
+
+# ============= WINNER CLAIM ROUTES =============
+
+@app.route('/api/winner-claim/<token>', methods=['GET'])
+def get_winner_claim_info(token):
+    try:
+        claim = get_winner_claim(token)
+        if not claim:
+            return jsonify({'error': 'Invalid link'}), 404
+        if claim['used_at'] is not None:
+            return jsonify({'error': 'This claim has already been submitted'}), 403
+        if claim['expires_at'] < datetime.utcnow():
+            return jsonify({'error': 'This claim link has expired'}), 403
+
+        item_resp = requests.get(nocodb_records_url('Auction Items', claim['item_id']), headers={'xc-token': NOCODB_TOKEN})
+        item = item_resp.json() if item_resp.status_code == 200 else {}
+        bidder = get_bidder_by_id(claim['bidder_id'])
+
+        return jsonify({
+            'item_name': item.get('Item Name'),
+            'amount': float(claim['amount']),
+            'display_name': bidder['display_name'] if bidder else None
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Get winner claim error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/winner-claim/<token>', methods=['POST'])
+def submit_winner_claim(token):
+    try:
+        claim = get_winner_claim(token)
+        if not claim:
+            return jsonify({'error': 'Invalid link'}), 404
+        if claim['used_at'] is not None:
+            return jsonify({'error': 'This claim has already been submitted'}), 403
+        if claim['expires_at'] < datetime.utcnow():
+            return jsonify({'error': 'This claim link has expired'}), 403
+
+        if 'proof' not in request.files:
+            return jsonify({'error': 'Proof screenshot is required'}), 400
+        file = request.files['proof']
+
+        upload_resp = requests.post(
+            f'{NOCODB_URL}/api/v1/db/storage/upload',
+            headers={'xc-token': NOCODB_TOKEN},
+            files={'file': (file.filename, file.stream, file.content_type)}
+        )
+        if upload_resp.status_code not in (200, 201):
+            return jsonify({'error': 'Proof upload failed'}), 502
+        uploaded = upload_resp.json()
+
+        item_resp = requests.get(nocodb_records_url('Auction Items', claim['item_id']), headers={'xc-token': NOCODB_TOKEN})
+        item = item_resp.json() if item_resp.status_code == 200 else {}
+        bidder = get_bidder_by_id(claim['bidder_id'])
+
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+        requests.post(nocodb_records_url('Winners'), headers=headers, json={
+            'Item Id': claim['item_id'],
+            'Item Name': item.get('Item Name'),
+            'Bidder Display Name': bidder['display_name'] if bidder else None,
+            'Amount': float(claim['amount']),
+            'Proof': uploaded,
+            'Status': 'Pending Review'
+        })
+
+        mark_winner_claim_used(token)
+        return jsonify({'message': 'Submitted for review'}), 201
+
+    except Exception as e:
+        app.logger.error(f"Submit winner claim error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 # ============= ANNOUNCEMENTS =============
 
@@ -1455,6 +1608,85 @@ def set_admin_status():
 #     except Exception as e:
 #         app.logger.error(f"Donation accepted webhook error: {e}")
 #         return jsonify({'error': str(e)}), 500
+
+
+
+def validate_table(table_name):
+    return table_name in ALLOWED_TABLES
+
+
+AUCTION_APP_URL = os.environ.get('AUCTION_APP_URL', 'https://auction.roll4rights.duckdns.org')
+
+SMTP_HOST = os.environ.get('SMTP_HOST')
+SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
+SMTP_USER = os.environ.get('SMTP_USER')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD')
+SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER)
+
+
+def send_email(to_address, subject, body_text):
+    msg = MIMEText(body_text)
+    msg['Subject'] = subject
+    msg['From'] = SMTP_FROM
+    msg['To'] = to_address
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.sendmail(SMTP_FROM, [to_address], msg.as_string())
+
+
+NAME_ADJECTIVES = [
+    'Quiet', 'Brave', 'Sunny', 'Clever', 'Gentle', 'Swift', 'Cozy', 'Bright',
+    'Calm', 'Bold', 'Merry', 'Lucky', 'Jolly', 'Mighty', 'Wandering', 'Silent'
+]
+NAME_NOUNS = [
+    'Otter', 'Fern', 'Panda', 'Falcon', 'Maple', 'Comet', 'Badger', 'Willow',
+    'Sparrow', 'Lynx', 'Cedar', 'Heron', 'Pebble', 'Ember', 'Fox', 'Harbor'
+]
+
+
+# ============= DISPLAY NAME GENERATION =============
+
+def generate_display_name():
+    for _ in range(20):
+        candidate = f"{random.choice(NAME_ADJECTIVES)}{random.choice(NAME_NOUNS)}{random.randint(10, 99)}"
+        if not display_name_exists(candidate):
+            return candidate
+    raise RuntimeError("Could not generate a unique display name")
+
+
+def transform_auction_item(item, bidder_country=None):
+    """Reshapes a raw NocoDB Auction Items row for public display.
+    Shipping Countries is intentionally never included in the response."""
+    shipping_countries = item.get('Shipping Countries') or ''
+    allowed = [c.strip().lower() for c in shipping_countries.split(',') if c.strip()]
+
+    if not allowed:
+        can_bid = True
+    elif bidder_country:
+        can_bid = bidder_country.strip().lower() in allowed
+    else:
+        can_bid = None
+
+    return {
+        'id': item.get('Id'),
+        'item_name': item.get('Item Name'),
+        'description': item.get('Description'),
+        'category': item.get('Category'),
+        'donator_name': item.get('Donator Name'),
+        'photos': item.get('Photos'),
+        'starting_bid': item.get('Starting Bid'),
+        'current_bid': item.get('Current Bid'),
+        'highest_bidder': item.get('Current Bidder Name'),
+        'auction_end_time': item.get('Auction End Time'),
+        'shipping_from': item.get('Location'),
+        'shipping_type': item.get('Shipping Type'),
+        'estimated_shipping_cost': item.get('Estimated Shipping Cost'),
+        'can_bid': can_bid,
+    }
+
+
+    
 
 
 # ============= BACKGROUND TASKS =============
