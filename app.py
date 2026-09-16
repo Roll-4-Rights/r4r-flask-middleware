@@ -1254,23 +1254,43 @@ def proxy_nocodb_media(filepath):
     Required because NOCODB_URL/NOCODB_TOKEN must never be exposed to the frontend --
     the browser can't hit NocoDB's storage directly, so this route fetches it
     server-side (using our token) and streams the bytes straight through.
+
+    Video playback specifically requires forwarding the browser's Range header
+    upstream, and relaying back a 206 Partial Content response with the matching
+    Content-Range/Accept-Ranges headers -- without this, video elements receive
+    a plain 200 response they can't seek/play and show a broken-video icon,
+    even though images (which don't use Range requests) work fine either way.
     """
     try:
+        upstream_headers = {'xc-token': NOCODB_TOKEN}
+        range_header = request.headers.get('Range')
+        if range_header:
+            upstream_headers['Range'] = range_header
+
         upstream_url = f'{NOCODB_URL}/{filepath}'
         upstream = requests.get(
             upstream_url,
-            headers={'xc-token': NOCODB_TOKEN},
+            headers=upstream_headers,
             stream=True,
             timeout=15
         )
 
-        if upstream.status_code != 200:
+        if upstream.status_code not in (200, 206):
             return jsonify({'error': 'File not found'}), 404
+
+        response_headers = {
+            'Content-Type': upstream.headers.get('Content-Type', 'application/octet-stream'),
+            'Accept-Ranges': upstream.headers.get('Accept-Ranges', 'bytes'),
+        }
+        if 'Content-Length' in upstream.headers:
+            response_headers['Content-Length'] = upstream.headers['Content-Length']
+        if 'Content-Range' in upstream.headers:
+            response_headers['Content-Range'] = upstream.headers['Content-Range']
 
         return Response(
             stream_with_context(upstream.iter_content(chunk_size=8192)),
-            content_type=upstream.headers.get('Content-Type', 'application/octet-stream'),
-            status=200
+            status=upstream.status_code,
+            headers=response_headers
         )
     except Exception as e:
         app.logger.error(f"Media proxy error: {e}")
