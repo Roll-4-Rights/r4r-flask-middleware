@@ -1337,8 +1337,9 @@ def donator_owns_media_path(filepath):
             for photo in photos:
                 if not isinstance(photo, dict):
                     continue
-                candidate = photo.get('path') or photo.get('signedPath')
-                if candidate and candidate.lstrip('/') == filepath.lstrip('/'):
+                candidates = [photo.get('path'), photo.get('signedPath')]
+                normalized_target = filepath.lstrip('/')
+                if any(c and c.lstrip('/') == normalized_target for c in candidates):
                     return True
         return False
     except Exception as e:
