@@ -1255,6 +1255,9 @@ def proxy_nocodb_media(filepath):
     the browser can't hit NocoDB's storage directly, so this route fetches it
     server-side (using our token) and streams the bytes straight through.
 
+    Only serves files that belong to the logged-in donator's own donations --
+    donators cannot view each other's uploaded photos/videos via this route.
+
     Video playback specifically requires forwarding the browser's Range header
     upstream, and relaying back a 206 Partial Content response with the matching
     Content-Range/Accept-Ranges headers -- without this, video elements receive
@@ -1262,6 +1265,9 @@ def proxy_nocodb_media(filepath):
     even though images (which don't use Range requests) work fine either way.
     """
     try:
+        if not donator_owns_media_path(filepath):
+            return jsonify({'error': 'Not found'}), 404
+
         upstream_headers = {'xc-token': NOCODB_TOKEN}
         range_header = request.headers.get('Range')
         if range_header:
