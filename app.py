@@ -1243,6 +1243,40 @@ def upload_files():
         app.logger.error(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# ============================================
+
+@app.route('/api/media/<path:filepath>', methods=['GET'])
+@login_required
+def proxy_nocodb_media(filepath):
+    """
+    Proxies attachment files (photos/videos) stored in NocoDB back to the browser.
+    Required because NOCODB_URL/NOCODB_TOKEN must never be exposed to the frontend --
+    the browser can't hit NocoDB's storage directly, so this route fetches it
+    server-side (using our token) and streams the bytes straight through.
+    """
+    try:
+        upstream_url = f'{NOCODB_URL}/{filepath}'
+        upstream = requests.get(
+            upstream_url,
+            headers={'xc-token': NOCODB_TOKEN},
+            stream=True,
+            timeout=15
+        )
+
+        if upstream.status_code != 200:
+            return jsonify({'error': 'File not found'}), 404
+
+        return Response(
+            stream_with_context(upstream.iter_content(chunk_size=8192)),
+            content_type=upstream.headers.get('Content-Type', 'application/octet-stream'),
+            status=200
+        )
+    except Exception as e:
+        app.logger.error(f"Media proxy error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ============= ROOT & ERROR HANDLERS =============
 
 @app.route('/')
