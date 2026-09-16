@@ -34,12 +34,20 @@ load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 
-# Session cookie config — required for cross-subdomain cookies over HTTPS
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_HTTPONLY'] = True
+FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
 
-app.config['SESSION_COOKIE_DOMAIN'] = '.roll4rights.duckdns.org'
+# Session cookie config — differs between local dev (plain HTTP) and
+# production (HTTPS, cross-subdomain cookies)
+if FLASK_ENV == 'development':
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['SESSION_COOKIE_DOMAIN'] = None
+else:
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_DOMAIN'] = '.roll4rights.duckdns.org'
+
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 # Ensure the donators table exists (separate from NocoDB, not visible in its UI)
 init_donators_table()
@@ -49,8 +57,6 @@ init_bidder_login_links_table()
 init_winner_claims_table()
 
 # ============= ENVIRONMENT CONFIG =============
-
-FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
 
 ALLOWED_ORIGINS = os.environ.get(
     'ALLOWED_ORIGINS',
@@ -1697,5 +1703,6 @@ if __name__ == '__main__':
     print(f"Proxying to NocoDB at {NOCODB_URL}")
     print(f"Debug mode: {debug_mode}")
     print("Token hidden from frontend")
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
 
 
