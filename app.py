@@ -485,6 +485,38 @@ def get_donation(record_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/donations/<record_id>/tracking', methods=['PATCH'])
+@login_required
+@csrf_protect
+def update_tracking_number(record_id):
+    """
+    Update just the Tracking Number field on a donation.
+    Unlike the main donation_write_operations route, this is intentionally
+    NOT restricted to 'Submitted' status -- tracking numbers only ever get
+    added *after* an admin has marked an item 'Accepted', so blocking on
+    status here would make it impossible to ever add tracking at all.
+    """
+    try:
+        get_url = nocodb_records_url('Donations and Tracking', record_id)
+        existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
+        if existing.status_code != 200 or existing.json().get('Donator Email') != current_user.email:
+            return jsonify({'error': 'Not found'}), 404
+
+        data = request.json or {}
+        if 'Tracking Number' not in data:
+            return jsonify({'error': 'Tracking Number is required'}), 400
+
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+        list_url = nocodb_records_url('Donations and Tracking')
+        body = {'Id': int(record_id), 'Tracking Number': data['Tracking Number']}
+        response = requests.patch(list_url, headers=headers, json=body)
+        return jsonify(response.json()), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Update tracking error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/donations/<record_id>', methods=['PATCH', 'DELETE'])
 @login_required
 @csrf_protect
