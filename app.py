@@ -1235,6 +1235,7 @@ def upload_files():
         url = f'{NOCODB_URL}/api/v1/db/storage/upload'
 
         response = requests.post(url, headers=headers, files=files_data)
+        app.logger.warning(f"NocoDB upload response: {response.status_code} - {response.text[:500]}")
         return jsonify(response.json()), response.status_code
 
     except RequestEntityTooLarge:
