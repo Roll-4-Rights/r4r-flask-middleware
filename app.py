@@ -1321,14 +1321,22 @@ def donator_owns_media_path(filepath):
         url = nocodb_records_url('Donations and Tracking')
         response = requests.get(url, headers=headers, params={
             'where': f"(Donator Email,eq,{current_user.email})",
-            'limit': 1000,
-            'fields': 'Photos'
+            'limit': 1000
         })
         data = response.json()
         records = data.get('list', []) if isinstance(data, dict) else data
 
         for record in records:
-            for photo in (record.get('Photos') or []):
+            photos = record.get('Photos') or []
+            if isinstance(photos, str):
+                import json
+                try:
+                    photos = json.loads(photos)
+                except Exception:
+                    photos = []
+            for photo in photos:
+                if not isinstance(photo, dict):
+                    continue
                 candidate = photo.get('path') or photo.get('signedPath')
                 if candidate and candidate.lstrip('/') == filepath.lstrip('/'):
                     return True
