@@ -1244,6 +1244,9 @@ def upload_files():
         return jsonify({'error': str(e)}), 500
 
 
+
+
+
 # ============================================
 
 @app.route('/api/media/<path:filepath>', methods=['GET'])
@@ -1301,6 +1304,42 @@ def proxy_nocodb_media(filepath):
     except Exception as e:
         app.logger.error(f"Media proxy error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# =========================================
+
+def donator_owns_media_path(filepath):
+    """
+    Returns True if `filepath` (e.g. "download/2026/09/16/.../file.jpg") appears
+    in any of the current donator's own donation records' Photos field.
+    Used by the media proxy to make sure donators can only stream their own
+    uploaded photos/videos, not anyone else's.
+    """
+    try:
+        headers = {'xc-token': NOCODB_TOKEN}
+        url = nocodb_records_url('Donations and Tracking')
+        response = requests.get(url, headers=headers, params={
+            'where': f"(Donator Email,eq,{current_user.email})",
+            'limit': 1000,
+            'fields': 'Photos'
+        })
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        for record in records:
+            for photo in (record.get('Photos') or []):
+                candidate = photo.get('path') or photo.get('signedPath')
+                if candidate and candidate.lstrip('/') == filepath.lstrip('/'):
+                    return True
+        return False
+    except Exception as e:
+        app.logger.error(f"Media ownership check error: {e}")
+        return False
+
+
+@app.route('/api/media/<path:filepath>', methods=['GET'])
+@login_required
+def proxy_nocodb_media(filepath):
 
 
 # ============= ROOT & ERROR HANDLERS =============
