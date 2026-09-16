@@ -22,6 +22,7 @@ import random
 import smtplib
 from email.mime.text import MIMEText
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 from PIL import Image
 from flask import abort
 from flask import stream_with_context
@@ -1335,11 +1336,6 @@ def donator_owns_media_path(filepath):
     except Exception as e:
         app.logger.error(f"Media ownership check error: {e}")
         return False
-
-
-@app.route('/api/media/<path:filepath>', methods=['GET'])
-@login_required
-def proxy_nocodb_media(filepath):
 
 
 # ============= ROOT & ERROR HANDLERS =============
