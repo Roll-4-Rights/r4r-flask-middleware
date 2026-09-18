@@ -1127,65 +1127,55 @@ def get_campaign_progress():
 
 
 
-
-
-
-
-    
+# ======= CAMPAIGN TABLE CALL -=======
 
 @app.route('/api/campaign-info', methods=['GET'])
 def get_campaign_info():
-    """
-    Public, read-only campaign metadata mapped to exact NocoDB columns.
-    Fixed to extract the first list record and properly track auction timeline values.
-    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         settings_resp = requests.get(nocodb_records_url('Campaign Settings'), headers=headers)
         settings_data = settings_resp.json()
         
-        # Pull the wrapper array cleanly from NocoDB's response body
         records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
-        
-        # FIX: Isolates the dictionary of the first row instead of evaluating the whole list wrapper
         settings = records[0] if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
 
-        # Extract timeline values using your exact NocoDB table column strings
-        raw_start = settings.get('Auction Start Time', '')
-        raw_end = settings.get('Auction End Time', '')
+        # DYNAMIC KEY FINDER
+        def find_val(target_words, fallback=''):
+            for k, v in settings.items():
+                if all(word.lower() in k.lower() for word in target_words) and v is not None:
+                    return v
+            return fallback
 
-        # Standardize space separators into valid ISO format characters for JavaScript engine stability
+        raw_start = find_val(['start', 'time'], find_val(['start', 'date'], ''))
+        raw_end = find_val(['end', 'time'], find_val(['end', 'date'], ''))
+
         if raw_start and ' ' in raw_start and 'T' not in raw_start:
             raw_start = raw_start.replace(' ', 'T')
         if raw_end and ' ' in raw_end and 'T' not in raw_end:
             raw_end = raw_end.replace(' ', 'T')
 
-        # Clean and extract the valid image file path out of the NocoDB Attachment container
-        raw_logo = settings.get('Charity Logo', '')
+        raw_logo = find_val(['charity', 'logo'], find_val(['logo'], []))
         logo_url = ''
-        
         if isinstance(raw_logo, list) and len(raw_logo) > 0:
             attachment = raw_logo[0]
             logo_url = attachment.get('url') or attachment.get('signedUrl') or attachment.get('path', '')
             if logo_url and logo_url.startswith('/'):
                 logo_url = f"https://duckdns.org{logo_url}"
-        elif isinstance(raw_logo, str):
-            logo_url = raw_logo
 
         return jsonify({
-            'name': settings.get('Campaign Name', ''),
-            'tagline': settings.get('Campaign Information', ''),
-            'charityName': settings.get('Charity Organization', ''),
-            'charityDescription': settings.get('Charity Organization Information', ''),
+            'name': find_val(['campaign', 'name'], find_val(['name'], '')),
+            'tagline': find_val(['information'], find_val(['tagline'], '')),
+            'charityName': find_val(['charity', 'organization'], find_val(['charity', 'name'], '')),
+            'charityDescription': find_val(['charity', 'description'], find_val(['organization', 'information'], '')),
             'startDate': raw_start, 
             'endDate': raw_end,    
             'charityLogoUrl': logo_url, 
-            'charityWebsite': settings.get('Charity Website', '')
+            'charityWebsite': find_val(['website'], '')
         }), 200
-
     except Exception as e:
-        app.logger.error(f"Get campaign info error: {e}")
+        app.logger.error(f"Get campaign info dynamic error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 
@@ -1219,7 +1209,6 @@ def get_donator_faqs():
 
 @app.route('/api/site-content', methods=['GET'])
 def get_site_content():
-
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Site Content')
@@ -1229,7 +1218,15 @@ def get_site_content():
         records = data.get('list', []) if isinstance(data, dict) else data
         content = records[0] if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
         
-        raw_hero = content.get('Hero Image', '')
+        # DYNAMIC KEY FINDER: Looks for columns containing your target words regardless of case/underscores
+        def find_val(target_words, fallback=''):
+            for k, v in content.items():
+                if all(word.lower() in k.lower() for word in target_words) and v is not None:
+                    return v
+            return fallback
+
+        # Process the hero image list block safely
+        raw_hero = find_val(['hero', 'image'], []) or find_val(['photo'], [])
         hero_url = ''
         if isinstance(raw_hero, list) and len(raw_hero) > 0:
             attachment = raw_hero[0]
@@ -1238,19 +1235,21 @@ def get_site_content():
                 hero_url = f"https://duckdns.org{hero_url}"
 
         return jsonify({
-            'Intro Paragraph': content.get('Intro Paragraph', ''),
-            'Body Paragraph 1': content.get('Body Paragraph 1', ''),
-            'Body Paragraph 2': content.get('Body Paragraph 2', ''),
-            'Cta Button Text': content.get('Cta Button Text', 'Learn More'),
-            'Social Instagram Url': content.get('Social Instagram Url', 'https://instagram.com'),
-            'Social Bluesky Url': content.get('Social Bluesky Url', 'https://bsky.app'),
-            'Footer Copy': content.get('Footer Copy', ''),
+            'Intro Paragraph': find_val(['intro', 'paragraph'], find_val(['intro'], '')),
+            'Body Paragraph 1': find_val(['body', '1'], find_val(['paragraph', '1'], '')),
+            'Body Paragraph 2': find_val(['body', '2'], find_val(['paragraph', '2'], '')),
+            'Cta Button Text': find_val(['cta'], find_val(['button'], 'Learn More')),
+            'Social Instagram Url': find_val(['instagram'], 'https://instagram.com'),
+            'Social Bluesky Url': find_val(['bluesky'], 'https://bsky.app'),
+            'Footer Copy': find_val(['footer'], ''),
             'Hero Image': [{ 'url': hero_url }] if hero_url else []
         }), 200
     except Exception as e:
-        app.logger.error(f"Get site content mapper error: {e}")
+        app.logger.error(f"Get site content dynamic error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# ===== BANNER API =======
 
 @app.route('/api/banner-messages', methods=['GET'])
 def get_banner_messages():
