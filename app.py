@@ -1216,26 +1216,26 @@ def get_site_content():
         data = response.json()
         
         records = data.get('list', []) if isinstance(data, dict) else data
-        content = records[0] if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
+        content = records if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
         
-        # DYNAMIC KEY FINDER: Looks for columns containing your target words regardless of case/underscores
+        # Helper finder to stay immune to NocoDB's lowercase field ID variations
         def find_val(target_words, fallback=''):
             for k, v in content.items():
                 if all(word.lower() in k.lower() for word in target_words) and v is not None:
                     return v
             return fallback
 
-        # Process the hero image list block safely
         raw_hero = find_val(['hero', 'image'], []) or find_val(['photo'], [])
         hero_url = ''
         if isinstance(raw_hero, list) and len(raw_hero) > 0:
-            attachment = raw_hero[0]
+            attachment = raw_hero
             hero_url = attachment.get('url') or attachment.get('signedUrl') or attachment.get('path', '')
             if hero_url and hero_url.startswith('/'):
-                hero_url = f"https://duckdns.org{hero_url}"
+                hero_url = f"https://api.roll4rights.duckdns.org{hero_url}"
 
+        # FIX: Returns the exact key signatures your frontend bundle is searching for
         return jsonify({
-            'Intro Paragraph': find_val(['intro', 'paragraph'], find_val(['intro'], '')),
+            'Intro Paragraph': find_val(['intro', 'paragraph'], ''),
             'Body Paragraph 1': find_val(['body', '1'], find_val(['paragraph', '1'], '')),
             'Body Paragraph 2': find_val(['body', '2'], find_val(['paragraph', '2'], '')),
             'Cta Button Text': find_val(['cta'], find_val(['button'], 'Learn More')),
@@ -1245,7 +1245,7 @@ def get_site_content():
             'Hero Image': [{ 'url': hero_url }] if hero_url else []
         }), 200
     except Exception as e:
-        app.logger.error(f"Get site content dynamic error: {e}")
+        app.logger.error(f"Get site content map fallback error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
