@@ -1125,24 +1125,52 @@ def get_campaign_progress():
         app.logger.error(f"Get campaign progress error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+
+
+
+
+
+    
+
 @app.route('/api/campaign-info', methods=['GET'])
 def get_campaign_info():
+    """
+    Public, read-only campaign metadata mapped to exact NocoDB columns.
+    Fixed to extract the first list record and properly track auction timeline values.
+    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         settings_resp = requests.get(nocodb_records_url('Campaign Settings'), headers=headers)
         settings_data = settings_resp.json()
+        
+        # Pull the wrapper array cleanly from NocoDB's response body
         records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
-        settings = records[0] if records else {}
+        
+        # FIX: Isolates the dictionary of the first row instead of evaluating the whole list wrapper
+        settings = records[0] if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
 
-        # Safely pull raw database text strings
+        # Extract timeline values using your exact NocoDB table column strings
         raw_start = settings.get('Auction Start Time', '')
         raw_end = settings.get('Auction End Time', '')
 
-        # Standardize space separators into valid ISO 'T' layouts for JavaScript stability
+        # Standardize space separators into valid ISO format characters for JavaScript engine stability
         if raw_start and ' ' in raw_start and 'T' not in raw_start:
             raw_start = raw_start.replace(' ', 'T')
         if raw_end and ' ' in raw_end and 'T' not in raw_end:
             raw_end = raw_end.replace(' ', 'T')
+
+        # Clean and extract the valid image file path out of the NocoDB Attachment container
+        raw_logo = settings.get('Charity Logo', '')
+        logo_url = ''
+        
+        if isinstance(raw_logo, list) and len(raw_logo) > 0:
+            attachment = raw_logo[0]
+            logo_url = attachment.get('url') or attachment.get('signedUrl') or attachment.get('path', '')
+            if logo_url and logo_url.startswith('/'):
+                logo_url = f"https://duckdns.org{logo_url}"
+        elif isinstance(raw_logo, str):
+            logo_url = raw_logo
 
         return jsonify({
             'name': settings.get('Campaign Name', ''),
@@ -1151,14 +1179,14 @@ def get_campaign_info():
             'charityDescription': settings.get('Charity Organization Information', ''),
             'startDate': raw_start, 
             'endDate': raw_end,    
-            'charityLogoUrl': settings.get('Charity Logo', ''), 
+            'charityLogoUrl': logo_url, 
             'charityWebsite': settings.get('Charity Website', '')
         }), 200
-
 
     except Exception as e:
         app.logger.error(f"Get campaign info error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 
