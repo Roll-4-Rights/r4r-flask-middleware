@@ -137,6 +137,7 @@ NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN')
 
 NOCODB_DONATOR_BASE_ID = os.environ.get('NOCODB_DONATOR_BASE_ID')
 NOCODB_AUCTION_BASE_ID = os.environ.get('NOCODB_AUCTION_BASE_ID')
+NOCODB_SITE_BASE_ID = os.environ.get('NOCODB_SITE_BASE_ID')
 
 TABLE_IDS = {
     'Donations and Tracking': 'mxe1093xcatdwzr',
@@ -144,13 +145,18 @@ TABLE_IDS = {
     'Public Calendar': 'm2pcy5vvdir11qr',
     'Team Calendar': 'm7d9kcnaqabtihu',
     'Announcements': 'muop1f8mhgos6uy',
-    'Campaign Settings': 'm5k63e9xcuixxio',
-    'Auction Items': 'm02kvrs08uiij89',
-    'Bids': 'mw3pqffp5qhrrjj',
     'Donator FAQs': 'mrsh3g2gm19ytlf',
     'Donator Messages': 'm1udj4sgwj3fsm2',
-    'Winners': 'mtzb1af2f49qtyz'
+
+    'Auction Items': 'm02kvrs08uiij89',
+    'Bids': 'mw3pqffp5qhrrjj',
+    'Winners': 'mtzb1af2f49qtyz',
+
+    'Banner Messages': os.environ.get('BANNER_MESSAGES_TABLE_ID', 'm5yzd3dm3341les'),
+    'Site Content': os.environ.get('SITE_CONTENT_TABLE_ID', 'mndrmhqvga8rivn'),
+    'Campaign Settings': os.environ.get('CAMPAIGN_TABLE_ID', 'me952mqf3n1v9yw'),
 }
+
 ALLOWED_TABLES = list(TABLE_IDS.keys())
 
 MIDDLEWARE_API_KEY = os.environ.get('MIDDLEWARE_API_KEY')
@@ -163,8 +169,7 @@ print("Flask Configuration:")
 print(f"   Environment: {FLASK_ENV}")
 print(f"   NocoDB URL: {NOCODB_URL}")
 print(f"   Donator Base ID: {NOCODB_DONATOR_BASE_ID}")
-print(f"   Auction Base ID: {NOCODB_AUCTION_BASE_ID}")
-print(f"   Token: {'Set' if NOCODB_TOKEN else 'Missing'}")
+print(f"   Auction Site Base ID: {NOCODB_SITE_BASE_ID}")
 print(f"   Allowed Origins: {ALLOWED_ORIGINS}")
 print(f"   API Key protection: {'Enabled' if MIDDLEWARE_API_KEY else 'DISABLED (no key set!)'}")
 
@@ -213,7 +218,8 @@ def health_check():
             'flask': 'running',
             'nocodb': nocodb_status,
             'donator_base_id': NOCODB_DONATOR_BASE_ID,
-            'auction_base_id': NOCODB_AUCTION_BASE_ID
+            'auction_base_id': NOCODB_AUCTION_BASE_ID,
+            'site_base_id': NOCODB_SITE_BASE_ID
         }), 200
     except Exception as e:
         return jsonify({
@@ -1088,9 +1094,7 @@ def update_campaign():
 @app.route('/api/campaign-progress', methods=['GET'])
 def get_campaign_progress():
     """
-    Live fundraising total, read directly from Campaign Settings.Running Est Total --
-    which is kept current automatically every time a bid is placed (see
-    recompute_running_total()). No summing needed here; just a fast single read.
+    Live fundraising total, read directly from Campaign Settings.
     """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
@@ -1100,11 +1104,14 @@ def get_campaign_progress():
         settings_records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
         settings = settings_records[0] if settings_records else {}
 
+        # Ensure 'Running Est Total' matches your NocoDB column name for tracking money
         total = float(settings.get('Running Est Total') or 0)
 
-        current_milestone = int(total // MILESTONE_STEP) * MILESTONE_STEP
-        next_milestone = current_milestone + MILESTONE_STEP
-        progress_within_milestone = (total - current_milestone) / MILESTONE_STEP
+        # Fallback to local 10000 step if MILESTONE_STEP isn't defined globally
+        step = globals().get('MILESTONE_STEP', 10000)
+        current_milestone = int(total // step) * step
+        next_milestone = current_milestone + step
+        progress_within_milestone = (total - current_milestone) / step
 
         return jsonify({
             'total': total,
@@ -1120,9 +1127,7 @@ def get_campaign_progress():
 @app.route('/api/campaign-info', methods=['GET'])
 def get_campaign_info():
     """
-    Public, read-only campaign metadata (name, tagline, charity info, dates).
-    Admins update this directly in NocoDB whenever a new auction/campaign starts --
-    no app deploy required to change campaigns, including swapping the charity link.
+    Public, read-only campaign metadata mapped to exact NocoDB columns.
     """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
@@ -1131,20 +1136,25 @@ def get_campaign_info():
         records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
         settings = records[0] if records else {}
 
+        # UPDATED MAPPINGS TO MATCH YOUR COLUMNS EXACTLY:
         return jsonify({
             'name': settings.get('Campaign Name', ''),
-            'tagline': settings.get('Tagline', ''),
-            'charityName': settings.get('Charity Name', ''),
-            'charityLogoUrl': settings.get('Charity Logo URL', ''),
-            'charityWebsite': settings.get('Charity Website', ''),
-            'charityDescription': settings.get('Charity Description', ''),
-            'startDate': settings.get('Start Date', ''),
-            'endDate': settings.get('End Date', '')
+            'tagline': settings.get('Campaign Information', ''),
+            'charityName': settings.get('Charity Organization', ''),
+            'charityDescription': settings.get('Charity Organization Information', ''),
+            'startDate': settings.get('Auction Start Time', ''), 
+            'endDate': settings.get('Auction End Time', ''),    
+            'charityLogoUrl': settings.get('Charity Logo', ''), 
+            'charityWebsite': settings.get('Charity Website', '')
         }), 200
 
     except Exception as e:
         app.logger.error(f"Get campaign info error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+
+# ======= FAQS =======
 
 @app.route('/api/donator-faqs', methods=['GET'])
 def get_donator_faqs():
@@ -1166,6 +1176,67 @@ def get_donator_faqs():
     except Exception as e:
         app.logger.error(f"Get donator FAQs error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ========AUCTION TABLES ========
+
+
+@app.route('/api/site-content', methods=['GET'])
+def get_site_content():
+
+    try:
+        headers = {'xc-token': NOCODB_TOKEN}
+        url = nocodb_records_url('Site Content')
+
+        response = requests.get(url, headers=headers, params=request.args)
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records[0] if records else {}), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Get site content error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/banner-messages', methods=['GET'])
+def get_banner_messages():
+
+    try:
+        headers = {'xc-token': NOCODB_TOKEN}
+        url = nocodb_records_url('Banner Messages')
+
+        response = requests.get(url, headers=headers, params={
+            'limit': 1000,
+            'where': "(Active,eq,1)",
+            'sort': '-Message,-Sort Order'
+        })
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Get banner messages error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/banner-messages', methods=['POST'])
+@require_api_key
+def create_banner_message():
+
+    try:
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+        url = nocodb_records_url('Banner Messages')
+
+        response = requests.post(url, headers=headers, json=request.json)
+        return jsonify(response.json()), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Create banner message error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 
 # ============= GENERIC TABLE ROUTES (allowlisted) =============
 
@@ -1236,7 +1307,7 @@ def table_record_write_operations(table_name, record_id):
             body.pop('Donator Email', None)
             body.pop('Item Status', None)
             response = requests.patch(url, headers=headers, json=body)
-        else:  # DELETE
+        else: 
             body = {'Id': int(record_id)}
             response = requests.delete(url, headers=headers, json=body)
 
@@ -1277,29 +1348,12 @@ def upload_files():
         return jsonify({'error': str(e)}), 500
 
 
-
-
-
 # ============================================
 
 @app.route('/api/media/<path:filepath>', methods=['GET'])
 @login_required
 def proxy_nocodb_media(filepath):
-    """
-    Proxies attachment files (photos/videos) stored in NocoDB back to the browser.
-    Required because NOCODB_URL/NOCODB_TOKEN must never be exposed to the frontend --
-    the browser can't hit NocoDB's storage directly, so this route fetches it
-    server-side (using our token) and streams the bytes straight through.
 
-    Only serves files that belong to the logged-in donator's own donations --
-    donators cannot view each other's uploaded photos/videos via this route.
-
-    Video playback specifically requires forwarding the browser's Range header
-    upstream, and relaying back a 206 Partial Content response with the matching
-    Content-Range/Accept-Ranges headers -- without this, video elements receive
-    a plain 200 response they can't seek/play and show a broken-video icon,
-    even though images (which don't use Range requests) work fine either way.
-    """
     try:
         if not donator_owns_media_path(filepath):
             return jsonify({'error': 'Not found'}), 404
@@ -1383,23 +1437,39 @@ def donator_owns_media_path(filepath):
 
 @app.route('/')
 def index():
-    """Root endpoint - API info"""
+    """Root endpoint - live API info: real registered routes + NocoDB connectivity per base."""
+    endpoints = sorted({
+        str(rule) for rule in app.url_map.iter_rules()
+        if rule.endpoint != 'static' and str(rule) != '/'
+    })
+
+    bases_to_check = {
+        'donator_base': NOCODB_DONATOR_BASE_ID,
+        'auction_base': NOCODB_AUCTION_BASE_ID,
+        'site_base': NOCODB_SITE_BASE_ID,
+    }
+    headers = {'xc-token': NOCODB_TOKEN}
+    nocodb_status = {}
+
+    for label, base_id in bases_to_check.items():
+        if not base_id:
+            nocodb_status[label] = 'not configured'
+            continue
+        try:
+            resp = requests.get(
+                f'{NOCODB_URL}/api/v2/meta/bases/{base_id}/tables',
+                headers=headers,
+                timeout=5
+            )
+            nocodb_status[label] = 'connected' if resp.status_code == 200 else f'error ({resp.status_code})'
+        except Exception as e:
+            nocodb_status[label] = f'unreachable ({e})'
+
     return jsonify({
         'service': 'Roll4Rights Flask Middleware',
         'status': 'running',
-        'endpoints': {
-            'health': '/api/health',
-            'donations': '/api/donations',
-            'calendar': '/api/calendar',
-            'team_calendar': '/api/calendar/team',
-            'auction_items': '/api/auction/items',
-            'auction_bids': '/api/auction/bids',
-            'announcements': '/api/announcements',
-            'campaign': '/api/campaign',
-            'donator_faqs': '/api/donator-faqs',
-            'upload': '/api/upload',
-            'generic': '/api/tables/<table_name>'
-        }
+        'nocodb': nocodb_status,
+        'endpoints': endpoints
     }), 200
 
 @app.route('/favicon.ico')
@@ -1471,12 +1541,7 @@ def upsert_donator_profile():
         return jsonify({'error': str(e)}), 500
 
 def recompute_running_total():
-    """
-    Sums Current Bid across all Auction Items and writes the result to
-    Campaign Settings.Running Est Total. Called right after a bid is placed
-    so the field always reflects the live total -- both for the app's
-    progress endpoint AND for anyone looking directly in NocoDB.
-    """
+
     headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
 
     items_resp = requests.get(nocodb_records_url('Auction Items'), headers={'xc-token': NOCODB_TOKEN}, params={'limit': 1000})
@@ -1497,7 +1562,6 @@ def recompute_running_total():
     return total
 
 # ============= ACCOUNT ROUTES =============
-"""Flask routes for managing account information in the donator app, such as uploading a profile picture, changing password, and updating username, NOT stored in the Donator Profiles table, stored in the Account Management table"""
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 MAX_IMAGE_DIMENSION = 1024
