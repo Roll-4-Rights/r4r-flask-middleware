@@ -1211,48 +1211,18 @@ def get_donator_faqs():
 def get_site_content():
     """
     Public, read-only homepage text copy mapping.
-    Updated to align with working donator route patterns.
+    Matches the working pass-through pattern of get_donations().
     """
     try:
-        # Pass both token and target base visibility headers to keep multi-base requests valid
-        headers = {
-            'xc-token': NOCODB_TOKEN,
-            'Content-Type': 'application/json'
-        }
+        headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Site Content')
-        response = requests.get(url, headers=headers)
-        data = response.json()
         
-        records = data.get('list', []) if isinstance(data, dict) else data
-        content = records if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
-        
-        def find_val(target_words, fallback=''):
-            for k, v in content.items():
-                if all(word.lower() in k.lower() for word in target_words) and v is not None:
-                    return v
-            return fallback
-
-        raw_hero = find_val(['hero', 'image'], []) or find_val(['photo'], [])
-        hero_url = ''
-        if isinstance(raw_hero, list) and len(raw_hero) > 0:
-            attachment = raw_hero
-            hero_url = attachment.get('url') or attachment.get('signedUrl') or attachment.get('path', '')
-            if hero_url and hero_url.startswith('/'):
-                hero_url = f"https://duckdns.org{hero_url}"
-
-        return jsonify({
-            'Intro Paragraph': find_val(['intro', 'paragraph'], ''),
-            'Body Paragraph 1': find_val(['body', '1'], find_val(['paragraph', '1'], '')),
-            'Body Paragraph 2': find_val(['body', '2'], find_val(['paragraph', '2'], '')),
-            'Cta Button Text': find_val(['cta'], find_val(['button'], 'Learn More')),
-            'Social Instagram Url': find_val(['instagram'], 'https://instagram.com'),
-            'Social Bluesky Url': find_val(['bluesky'], 'https://bsky.app'),
-            'Footer Copy': find_val(['footer'], ''),
-            'Hero Image': [{ 'url': hero_url }] if hero_url else []
-        }), 200
+        response = requests.get(url, headers=headers, params=request.args)
+        return jsonify(response.json()), response.status_code
     except Exception as e:
-        app.logger.error(f"Get site content map fallback error: {e}")
+        app.logger.error(f"Get site content pass-through error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 
@@ -1262,24 +1232,18 @@ def get_site_content():
 def get_banner_messages():
     """
     Public live notification ticker feed mapper.
-    Aligned to match working donator tracking filter patterns.
+    Matches the working pass-through pattern of get_donations().
     """
     try:
-        headers = {
-            'xc-token': NOCODB_TOKEN,
-            'Content-Type': 'application/json'
-        }
+        headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Banner Messages')
         
-        # FIX: Match the exact conditional parentheses wrapper format used in your working get_donations() route
-        response = requests.get(url, headers=headers, params={'where': '(Active,eq,1)'})
-        data = response.json()
-        
-        records = data.get('list', []) if isinstance(data, dict) else data
-        return jsonify(records), 200
+        response = requests.get(url, headers=headers, params=request.args)
+        return jsonify(response.json()), response.status_code
     except Exception as e:
-        app.logger.error(f"Get banner messages mapper error: {e}")
+        app.logger.error(f"Get banner messages pass-through error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 
