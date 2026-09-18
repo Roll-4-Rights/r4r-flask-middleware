@@ -1223,38 +1223,52 @@ def get_site_content():
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Site Content')
-
-        response = requests.get(url, headers=headers, params=request.args)
+        response = requests.get(url, headers=headers)
         data = response.json()
+        
         records = data.get('list', []) if isinstance(data, dict) else data
+        content = records[0] if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
+        
+        raw_hero = content.get('Hero Image', '')
+        hero_url = ''
+        if isinstance(raw_hero, list) and len(raw_hero) > 0:
+            attachment = raw_hero[0]
+            hero_url = attachment.get('url') or attachment.get('signedUrl') or attachment.get('path', '')
+            if hero_url and hero_url.startswith('/'):
+                hero_url = f"https://duckdns.org{hero_url}"
 
-        return jsonify(records[0] if records else {}), response.status_code
-
+        return jsonify({
+            'Intro Paragraph': content.get('Intro Paragraph', ''),
+            'Body Paragraph 1': content.get('Body Paragraph 1', ''),
+            'Body Paragraph 2': content.get('Body Paragraph 2', ''),
+            'Cta Button Text': content.get('Cta Button Text', 'Learn More'),
+            'Social Instagram Url': content.get('Social Instagram Url', 'https://instagram.com'),
+            'Social Bluesky Url': content.get('Social Bluesky Url', 'https://bsky.app'),
+            'Footer Copy': content.get('Footer Copy', ''),
+            'Hero Image': [{ 'url': hero_url }] if hero_url else []
+        }), 200
     except Exception as e:
-        app.logger.error(f"Get site content error: {e}")
+        app.logger.error(f"Get site content mapper error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/banner-messages', methods=['GET'])
 def get_banner_messages():
-
+    """
+    Public live notification ticker feed mapper.
+    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Banner Messages')
-
-        response = requests.get(url, headers=headers, params={
-            'limit': 1000,
-            'where': "(Active,eq,1)",
-            'sort': '-Message,-Sort Order'
-        })
+        response = requests.get(url, headers=headers, params={'where': '(Active,eq,1)'})
         data = response.json()
+        
         records = data.get('list', []) if isinstance(data, dict) else data
-
-        return jsonify(records), response.status_code
-
+        return jsonify(records), 200
     except Exception as e:
-        app.logger.error(f"Get banner messages error: {e}")
+        app.logger.error(f"Get banner messages mapper error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 @app.route('/api/banner-messages', methods=['POST'])
