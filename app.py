@@ -177,13 +177,20 @@ print(f"   API Key protection: {'Enabled' if MIDDLEWARE_API_KEY else 'DISABLED (
 def nocodb_records_url(table_name, record_id=None):
     table_id = TABLE_IDS[table_name]
     
-    target_base_id = NOCODB_DONATOR_BASE_ID
-    
+    # Force fresh runtime lookups to prevent global variable initialization lag in Docker
     if table_name in ['Banner Messages', 'Site Content', 'Campaign Settings']:
-        target_base_id = NOCODB_SITE_BASE_ID
+        target_base_id = os.environ.get('NOCODB_SITE_BASE_ID')
+    elif table_name in ['Auction Items', 'Bids', 'Winners']:
+        target_base_id = os.environ.get('NOCODB_AUCTION_BASE_ID')
+    else:
+        target_base_id = os.environ.get('NOCODB_DONATOR_BASE_ID')
         
-    base = f'{NOCODB_URL}/api/v2/bases/{target_base_id}/tables/{table_id}/records'
+    if not target_base_id:
+        app.logger.error(f"Configuration Missing: No Base ID found for table {table_name}")
+        
+    base = f"{os.environ.get('NOCODB_URL', 'http://localhost:8080')}/api/v2/bases/{target_base_id}/tables/{table_id}/records"
     return f'{base}/{record_id}' if record_id else base
+
 
 
 
