@@ -152,9 +152,9 @@ TABLE_IDS = {
     'Bids': 'mw3pqffp5qhrrjj',
     'Winners': 'mtzb1af2f49qtyz',
 
-    'Banner Messages': os.environ.get('BANNER_MESSAGES_TABLE_ID', 'm5yzd3dm3341les'),
-    'Site Content': os.environ.get('SITE_CONTENT_TABLE_ID', 'mndrmhqvga8rivn'),
-    'Campaign Settings': os.environ.get('CAMPAIGN_TABLE_ID', 'me952mqf3n1v9yw'),
+    'Banner Messages': 'mteutqrv2226mph',
+    'Site Content': 'mjy7qbt2mekpcer',
+    'Campaign Settings': 'mnpy3m0acptou4c',
 }
 
 ALLOWED_TABLES = list(TABLE_IDS.keys())
@@ -1127,9 +1127,6 @@ def get_campaign_progress():
 
 @app.route('/api/campaign-info', methods=['GET'])
 def get_campaign_info():
-    """
-    Public, read-only campaign metadata mapped to exact NocoDB columns.
-    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         settings_resp = requests.get(nocodb_records_url('Campaign Settings'), headers=headers)
@@ -1137,17 +1134,27 @@ def get_campaign_info():
         records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
         settings = records[0] if records else {}
 
-        # UPDATED MAPPINGS TO MATCH YOUR COLUMNS EXACTLY:
+        # Safely pull raw database text strings
+        raw_start = settings.get('Auction Start Time', '')
+        raw_end = settings.get('Auction End Time', '')
+
+        # Standardize space separators into valid ISO 'T' layouts for JavaScript stability
+        if raw_start and ' ' in raw_start and 'T' not in raw_start:
+            raw_start = raw_start.replace(' ', 'T')
+        if raw_end and ' ' in raw_end and 'T' not in raw_end:
+            raw_end = raw_end.replace(' ', 'T')
+
         return jsonify({
             'name': settings.get('Campaign Name', ''),
             'tagline': settings.get('Campaign Information', ''),
             'charityName': settings.get('Charity Organization', ''),
             'charityDescription': settings.get('Charity Organization Information', ''),
-            'startDate': settings.get('Auction Start Time', ''), 
-            'endDate': settings.get('Auction End Time', ''),    
+            'startDate': raw_start, 
+            'endDate': raw_end,    
             'charityLogoUrl': settings.get('Charity Logo', ''), 
             'charityWebsite': settings.get('Charity Website', '')
         }), 200
+
 
     except Exception as e:
         app.logger.error(f"Get campaign info error: {e}")
