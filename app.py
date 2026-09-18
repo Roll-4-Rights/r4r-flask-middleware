@@ -188,8 +188,12 @@ def nocodb_records_url(table_name, record_id=None):
     if not target_base_id:
         app.logger.error(f"Configuration Missing: No Base ID found for table {table_name}")
         
-    base = f"{os.environ.get('NOCODB_URL', 'http://localhost:8080')}/api/v2/bases/{target_base_id}/tables/{table_id}/records"
+    raw_url = os.environ.get('NOCODB_URL', 'http://localhost:8080')
+    base_url = raw_url.rstrip('/')
+    
+    base = f'{base_url}/api/v2/bases/{target_base_id}/tables/{table_id}/records'
     return f'{base}/{record_id}' if record_id else base
+
 
 
 
@@ -1243,19 +1247,19 @@ def get_site_content():
 
 @app.route('/api/banner-messages', methods=['GET'])
 def get_banner_messages():
-    """
-    Public live notification ticker feed mapper.
-    Matches the working pass-through pattern of get_donations().
-    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Banner Messages')
         
         response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
+        data = response.json()
+        
+        records = data.get('list', []) if isinstance(data, dict) else data
+        return jsonify(records), response.status_code
     except Exception as e:
         app.logger.error(f"Get banner messages pass-through error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 
