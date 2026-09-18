@@ -1063,6 +1063,11 @@ def create_announcement():
         app.logger.error(f"Create announcement error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+
+
+    
+
 @app.route('/api/campaign', methods=['GET'])
 def get_campaign():
     """Get current campaign settings (countdown, donate link, etc.)"""
