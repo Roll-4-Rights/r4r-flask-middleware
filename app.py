@@ -176,8 +176,15 @@ print(f"   API Key protection: {'Enabled' if MIDDLEWARE_API_KEY else 'DISABLED (
 
 def nocodb_records_url(table_name, record_id=None):
     table_id = TABLE_IDS[table_name]
-    base = f'{NOCODB_URL}/api/v2/tables/{table_id}/records'
+    
+    target_base_id = NOCODB_DONATOR_BASE_ID
+    
+    if table_name in ['Banner Messages', 'Site Content', 'Campaign Settings']:
+        target_base_id = NOCODB_SITE_BASE_ID
+        
+    base = f'{NOCODB_URL}/api/v2/bases/{target_base_id}/tables/{table_id}/records'
     return f'{base}/{record_id}' if record_id else base
+
 
 
 # ============= API KEY DECORATOR (unchanged — admin routes still use this) =============
@@ -495,13 +502,7 @@ def get_donation(record_id):
 @login_required
 @csrf_protect
 def update_tracking_number(record_id):
-    """
-    Update just the Tracking Number field on a donation.
-    Unlike the main donation_write_operations route, this is intentionally
-    NOT restricted to 'Submitted' status -- tracking numbers only ever get
-    added *after* an admin has marked an item 'Accepted', so blocking on
-    status here would make it impossible to ever add tracking at all.
-    """
+
     try:
         get_url = nocodb_records_url('Donations and Tracking', record_id)
         existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
