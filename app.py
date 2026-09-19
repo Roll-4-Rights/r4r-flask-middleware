@@ -176,26 +176,8 @@ print(f"   API Key protection: {'Enabled' if MIDDLEWARE_API_KEY else 'DISABLED (
 
 def nocodb_records_url(table_name, record_id=None):
     table_id = TABLE_IDS[table_name]
-    
-    # Force fresh runtime lookups to prevent global variable initialization lag in Docker
-    if table_name in ['Banner Messages', 'Site Content', 'Campaign Settings']:
-        target_base_id = os.environ.get('NOCODB_SITE_BASE_ID')
-    elif table_name in ['Auction Items', 'Bids', 'Winners']:
-        target_base_id = os.environ.get('NOCODB_AUCTION_BASE_ID')
-    else:
-        target_base_id = os.environ.get('NOCODB_DONATOR_BASE_ID')
-        
-    if not target_base_id:
-        app.logger.error(f"Configuration Missing: No Base ID found for table {table_name}")
-        
-    raw_url = os.environ.get('NOCODB_URL', 'http://localhost:8080')
-    base_url = raw_url.rstrip('/')
-    
-    base = f'{base_url}/api/v2/bases/{target_base_id}/tables/{table_id}/records'
+    base = f'{NOCODB_URL}/api/v2/tables/{table_id}/records'
     return f'{base}/{record_id}' if record_id else base
-
-
-
 
 
 # ============= API KEY DECORATOR (unchanged — admin routes still use this) =============
@@ -513,7 +495,13 @@ def get_donation(record_id):
 @login_required
 @csrf_protect
 def update_tracking_number(record_id):
-
+    """
+    Update just the Tracking Number field on a donation.
+    Unlike the main donation_write_operations route, this is intentionally
+    NOT restricted to 'Submitted' status -- tracking numbers only ever get
+    added *after* an admin has marked an item 'Accepted', so blocking on
+    status here would make it impossible to ever add tracking at all.
+    """
     try:
         get_url = nocodb_records_url('Donations and Tracking', record_id)
         existing = requests.get(get_url, headers={'xc-token': NOCODB_TOKEN})
@@ -1074,11 +1062,6 @@ def create_announcement():
         app.logger.error(f"Create announcement error: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-
-
-    
-
 @app.route('/api/campaign', methods=['GET'])
 def get_campaign():
     """Get current campaign settings (countdown, donate link, etc.)"""
@@ -1142,58 +1125,33 @@ def get_campaign_progress():
         app.logger.error(f"Get campaign progress error: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-
-# ======= CAMPAIGN TABLE CALL -=======
-
 @app.route('/api/campaign-info', methods=['GET'])
 def get_campaign_info():
+    """
+    Public, read-only campaign metadata mapped to exact NocoDB columns.
+    """
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         settings_resp = requests.get(nocodb_records_url('Campaign Settings'), headers=headers)
         settings_data = settings_resp.json()
-        
         records = settings_data.get('list', []) if isinstance(settings_data, dict) else settings_data
-        settings = records[0] if isinstance(records, list) and len(records) > 0 else (records if isinstance(records, dict) else {})
+        settings = records[0] if records else {}
 
-        # DYNAMIC KEY FINDER
-        def find_val(target_words, fallback=''):
-            for k, v in settings.items():
-                if all(word.lower() in k.lower() for word in target_words) and v is not None:
-                    return v
-            return fallback
-
-        raw_start = find_val(['start', 'time'], find_val(['start', 'date'], ''))
-        raw_end = find_val(['end', 'time'], find_val(['end', 'date'], ''))
-
-        if raw_start and ' ' in raw_start and 'T' not in raw_start:
-            raw_start = raw_start.replace(' ', 'T')
-        if raw_end and ' ' in raw_end and 'T' not in raw_end:
-            raw_end = raw_end.replace(' ', 'T')
-
-        raw_logo = find_val(['charity', 'logo'], find_val(['logo'], []))
-        logo_url = ''
-        if isinstance(raw_logo, list) and len(raw_logo) > 0:
-            attachment = raw_logo[0]
-            logo_url = attachment.get('url') or attachment.get('signedUrl') or attachment.get('path', '')
-            if logo_url and logo_url.startswith('/'):
-                logo_url = f"https://duckdns.org{logo_url}"
-
+        # UPDATED MAPPINGS TO MATCH YOUR COLUMNS EXACTLY:
         return jsonify({
-            'name': find_val(['campaign', 'name'], find_val(['name'], '')),
-            'tagline': find_val(['information'], find_val(['tagline'], '')),
-            'charityName': find_val(['charity', 'organization'], find_val(['charity', 'name'], '')),
-            'charityDescription': find_val(['charity', 'description'], find_val(['organization', 'information'], '')),
-            'startDate': raw_start, 
-            'endDate': raw_end,    
-            'charityLogoUrl': logo_url, 
-            'charityWebsite': find_val(['website'], '')
+            'name': settings.get('Campaign Name', ''),
+            'tagline': settings.get('Campaign Information', ''),
+            'charityName': settings.get('Charity Organization', ''),
+            'charityDescription': settings.get('Charity Organization Information', ''),
+            'startDate': settings.get('Auction Start Time', ''), 
+            'endDate': settings.get('Auction End Time', ''),    
+            'charityLogoUrl': settings.get('Charity Logo', ''), 
+            'charityWebsite': settings.get('Charity Website', '')
         }), 200
+
     except Exception as e:
-        app.logger.error(f"Get campaign info dynamic error: {e}")
+        app.logger.error(f"Get campaign info error: {e}")
         return jsonify({'error': str(e)}), 500
-
-
 
 
 
@@ -1226,42 +1184,58 @@ def get_donator_faqs():
 
 @app.route('/api/site-content', methods=['GET'])
 def get_site_content():
-    """
-    Public, read-only homepage text copy mapping.
-    Matches the working pass-through pattern of get_donations().
-    """
+
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Site Content')
-        
+
         response = requests.get(url, headers=headers, params=request.args)
-        return jsonify(response.json()), response.status_code
+        data = response.json()
+        records = data.get('list', []) if isinstance(data, dict) else data
+
+        return jsonify(records[0] if records else {}), response.status_code
+
     except Exception as e:
-        app.logger.error(f"Get site content pass-through error: {e}")
+        app.logger.error(f"Get site content error: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-
-
-# ===== BANNER API =======
 
 @app.route('/api/banner-messages', methods=['GET'])
 def get_banner_messages():
+
     try:
         headers = {'xc-token': NOCODB_TOKEN}
         url = nocodb_records_url('Banner Messages')
-        
-        response = requests.get(url, headers=headers, params=request.args)
+
+        response = requests.get(url, headers=headers, params={
+            'limit': 1000,
+            'where': "(Active,eq,1)",
+            'sort': '-Message,-Sort Order'
+        })
         data = response.json()
-        
         records = data.get('list', []) if isinstance(data, dict) else data
+
         return jsonify(records), response.status_code
+
     except Exception as e:
-        app.logger.error(f"Get banner messages pass-through error: {e}")
+        app.logger.error(f"Get banner messages error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/banner-messages', methods=['POST'])
+@require_api_key
+def create_banner_message():
 
+    try:
+        headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
+        url = nocodb_records_url('Banner Messages')
+
+        response = requests.post(url, headers=headers, json=request.json)
+        return jsonify(response.json()), response.status_code
+
+    except Exception as e:
+        app.logger.error(f"Create banner message error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 
