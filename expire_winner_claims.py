@@ -20,7 +20,9 @@ load_dotenv()
 
 NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080')
 NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN')
-BIDS_TABLE_ID = os.environ.get('NOCODB_BIDS_TABLE_ID')
+BIDS_TABLE_ID = os.environ.get('BIDS_TABLE_ID')
+if not BIDS_TABLE_ID:
+    raise RuntimeError('BIDS_TABLE_ID must be set')
 AUCTION_APP_URL = os.environ.get('AUCTION_APP_URL', 'https://auction.roll4rights.duckdns.org')
 CLAIM_EXPIRY_HOURS = 48
 

@@ -291,7 +291,10 @@ def main():
     new_id = create_table(dest_base_id, TABLE_SCHEMAS[table_name], headers)
 
     if new_id:
-        print(f"\n👉 Update TABLE_IDS['{table_name}'] in app.py to: '{new_id}'")
+        from app.config import TABLE_ID_ENV_VARS
+
+        env_key = TABLE_ID_ENV_VARS.get(table_name, "TABLE_ID_ENV_VAR")
+        print(f"\n👉 Set {env_key}={new_id!r} in your environment")
 
 
 if __name__ == '__main__':

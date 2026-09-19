@@ -10,16 +10,13 @@ import os
 import requests
 from dotenv import load_dotenv
 
+from app.config import Config
+
 load_dotenv()
 
 NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080')
 NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN')
-
-TABLE_IDS = {
-    'Donations and Tracking': 'mxe1093xcatdwzr',
-    'Auction Items': 'm02kvrs08uiij89',
-    'Donator Profiles': 'mvga4wzvkiq52xx',
-}
+TABLE_IDS = Config.require_table_ids()
 
 
 def nocodb_records_url(table_name, record_id=None):
