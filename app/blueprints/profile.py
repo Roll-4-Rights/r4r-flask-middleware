@@ -7,7 +7,7 @@ from app.decorators import csrf_protect, donator_required
 from app.services.errors import handle_route_errors
 from app.services.nocodb import as_flask_response, get_first_for_field, upsert_for_field
 from app.services.uploads import save_profile_image
-from app.services.validation import PROFILE_WRITABLE_FIELDS, pick_allowed_fields
+from app.services.validation import PROFILE_WRITABLE_FIELDS, pick_allowed_fields, profile_field_errors
 from db import get_db_connection
 
 bp = Blueprint("profile", __name__)
@@ -28,6 +28,9 @@ def get_donator_profile():
 @handle_route_errors("Failed to save profile")
 def upsert_donator_profile():
     data = pick_allowed_fields(request.json or {}, PROFILE_WRITABLE_FIELDS)
+    error = profile_field_errors(data)
+    if error:
+        return jsonify({"error": error}), 400
     data["Donator Email"] = current_user.email
     return as_flask_response(upsert_for_field(PROFILES_TABLE, "Donator Email", current_user.email, data))
 
