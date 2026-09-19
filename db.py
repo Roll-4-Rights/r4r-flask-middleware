@@ -12,12 +12,12 @@ def init_pool():
     _pool = pg_pool.ThreadedConnectionPool(
         minconn=2,
         maxconn=20,
-        host=os.environ.get('POSTGRES_HOST'),
-        port=os.environ.get('POSTGRES_PORT', 5432),
-        dbname=os.environ.get('POSTGRES_DB'),
-        user=os.environ.get('POSTGRES_USER'),
-        password=os.environ.get('POSTGRES_PASSWORD'),
-        cursor_factory=psycopg2.extras.RealDictCursor
+        host=os.environ.get("POSTGRES_HOST"),
+        port=os.environ.get("POSTGRES_PORT", 5432),
+        dbname=os.environ.get("POSTGRES_DB"),
+        user=os.environ.get("POSTGRES_USER"),
+        password=os.environ.get("POSTGRES_PASSWORD"),
+        cursor_factory=psycopg2.extras.RealDictCursor,
     )
 
 
@@ -42,6 +42,7 @@ def get_db_connection():
     if _pool is None:
         init_pool()
     return _PooledConnection(_pool.getconn())
+
 
 def init_invite_codes_table():
     conn = get_db_connection()
@@ -71,7 +72,7 @@ def create_invite_code(email, days_valid=14):
         VALUES (%s, %s, NOW() + (%s || ' days')::interval)
         RETURNING code, email, expires_at
         """,
-        (code, email.strip().lower(), days_valid)
+        (code, email.strip().lower(), days_valid),
     )
     row = cur.fetchone()
     conn.commit()
@@ -119,7 +120,6 @@ def init_donators_table():
     conn.close()
 
 
-
 def get_forum_messages_for_moderation(channel=None, limit=200):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -130,7 +130,7 @@ def get_forum_messages_for_moderation(channel=None, limit=200):
             FROM forum_messages WHERE channel = %s
             ORDER BY created_at DESC LIMIT %s
             """,
-            (channel, limit)
+            (channel, limit),
         )
     else:
         cur.execute(
@@ -138,7 +138,7 @@ def get_forum_messages_for_moderation(channel=None, limit=200):
             SELECT id, channel, sender_id, sender_name, message, created_at
             FROM forum_messages ORDER BY created_at DESC LIMIT %s
             """,
-            (limit,)
+            (limit,),
         )
     rows = cur.fetchall()
     cur.close()
@@ -168,7 +168,6 @@ def clear_forum_messages_by_channel(channel):
     return deleted
 
 
-
 def list_all_donators():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -177,6 +176,7 @@ def list_all_donators():
     cur.close()
     conn.close()
     return rows
+
 
 def delete_donator_by_id(donator_id):
     conn = get_db_connection()
@@ -223,7 +223,7 @@ def set_donator_admin_status(email, is_admin):
     cur = conn.cursor()
     cur.execute(
         "UPDATE donators SET is_admin = %s WHERE email = %s RETURNING id, name, email, is_admin",
-        (is_admin, email.strip().lower())
+        (is_admin, email.strip().lower()),
     )
     row = cur.fetchone()
     conn.commit()
@@ -252,10 +252,11 @@ def get_next_lot_number():
     row = cur.fetchone()
     cur.close()
     conn.close()
-    return row['lot_number']
+    return row["lot_number"]
 
 
 # ============= BIDDERS =============
+
 
 def init_bidders_table():
     conn = get_db_connection()
@@ -299,7 +300,7 @@ def create_bidder(display_name, email, country):
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO bidders (display_name, email, country) VALUES (%s, %s, %s) RETURNING *",
-        (display_name, email, country)
+        (display_name, email, country),
     )
     row = cur.fetchone()
     conn.commit()
@@ -319,6 +320,7 @@ def display_name_exists(display_name):
 
 
 # ============= BIDDER LOGIN LINKS (passwordless) =============
+
 
 def init_bidder_login_links_table():
     conn = get_db_connection()
@@ -342,7 +344,7 @@ def create_login_link(token, bidder_id, expires_at):
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO bidder_login_links (token, bidder_id, expires_at) VALUES (%s, %s, %s)",
-        (token, bidder_id, expires_at)
+        (token, bidder_id, expires_at),
     )
     conn.commit()
     cur.close()
@@ -370,6 +372,7 @@ def mark_login_link_used(token):
 
 # ============= WINNER CLAIMS =============
 
+
 def init_winner_claims_table():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -396,7 +399,7 @@ def create_winner_claim(token, bidder_id, item_id, amount, expires_at):
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO winner_claims (token, bidder_id, item_id, amount, expires_at) VALUES (%s, %s, %s, %s, %s)",
-        (token, bidder_id, item_id, amount, expires_at)
+        (token, bidder_id, item_id, amount, expires_at),
     )
     conn.commit()
     cur.close()
@@ -450,7 +453,7 @@ def get_forfeited_bidder_ids_for_item(item_id):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("SELECT bidder_id FROM winner_claims WHERE item_id = %s AND status = 'expired'", (item_id,))
-    ids = [row['bidder_id'] for row in cur.fetchall()]
+    ids = [row["bidder_id"] for row in cur.fetchall()]
     cur.close()
     conn.close()
     return ids

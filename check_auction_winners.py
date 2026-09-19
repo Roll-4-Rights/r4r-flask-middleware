@@ -16,7 +16,9 @@ load_dotenv()
 
 NOCODB_URL = os.environ.get('NOCODB_URL', 'http://localhost:8080')
 NOCODB_TOKEN = os.environ.get('NOCODB_TOKEN')
-AUCTION_ITEMS_TABLE_ID = os.environ.get('NOCODB_AUCTION_ITEMS_TABLE_ID')
+AUCTION_ITEMS_TABLE_ID = os.environ.get('AUCTION_ITEMS_TABLE_ID')
+if not AUCTION_ITEMS_TABLE_ID:
+    raise RuntimeError('AUCTION_ITEMS_TABLE_ID must be set')
 AUCTION_APP_URL = os.environ.get('AUCTION_APP_URL', 'https://auction.roll4rights.duckdns.org')
 
 headers = {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
