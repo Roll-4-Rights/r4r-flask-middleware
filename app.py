@@ -152,9 +152,9 @@ TABLE_IDS = {
     'Bids': 'mw3pqffp5qhrrjj',
     'Winners': 'mtzb1af2f49qtyz',
 
-    'Banner Messages': 'mteutqrv2226mph',
-    'Site Content': 'mjy7qbt2mekpcer',
-    'Campaign Settings': 'mnpy3m0acptou4c',
+    'Banner Messages': os.environ.get('BANNER_MESSAGES_TABLE_ID', 'm5yzd3dm3341les'),
+    'Site Content': os.environ.get('SITE_CONTENT_TABLE_ID', 'mndrmhqvga8rivn'),
+    'Campaign Settings': os.environ.get('CAMPAIGN_TABLE_ID', 'me952mqf3n1v9yw'),
 }
 
 ALLOWED_TABLES = list(TABLE_IDS.keys())
