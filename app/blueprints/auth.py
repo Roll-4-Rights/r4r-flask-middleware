@@ -302,6 +302,7 @@ def reset_password():
 
         set_donator_password(record["donator_id"], generate_password_hash(new_password))
         mark_password_reset_used(hash_reset_token(token))
+        current_app.logger.info(f"Password reset completed for donator id {record['donator_id']}")
         return jsonify({"message": "Password updated"}), 200
     except Exception as e:
         return api_error(current_app.logger, "Password reset failed", e)
