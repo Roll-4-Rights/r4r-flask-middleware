@@ -34,6 +34,7 @@ class Config:
 
     SESSION_COOKIE_DOMAIN = os.environ.get("SESSION_COOKIE_DOMAIN", ".roll4rights.duckdns.org")
     DONATE_APP_URL = os.environ.get("DONATE_APP_URL", "https://donate.roll4rights.duckdns.org")
+    PASSWORD_RESET_TTL_MINUTES = int(os.environ.get("PASSWORD_RESET_TTL_MINUTES", 30))
     PERMANENT_SESSION_LIFETIME = timedelta(days=int(os.environ.get("SESSION_LIFETIME_DAYS", 14)))
 
     NOCODB_URL = os.environ.get("NOCODB_URL", "http://localhost:8080")

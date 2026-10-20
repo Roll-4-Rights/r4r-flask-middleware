@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_user, logout_user
@@ -8,14 +8,20 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app.decorators import csrf_protect, donator_required, require_api_key
 from app.extensions import limiter
 from app.models import Donator
+from app.services.email import send_email
 from app.services.errors import api_error
 from app.services.validation import is_valid_email
 from db import (
     create_invite_code,
+    create_password_reset_token,
     get_db_connection,
     get_donator_by_email,
     get_invite_code,
+    get_password_reset_token,
+    hash_reset_token,
     mark_invite_used,
+    mark_password_reset_used,
+    set_donator_password,
 )
 
 bp = Blueprint("auth", __name__)
@@ -238,3 +244,81 @@ def change_password():
         return jsonify({"message": "Password updated"}), 200
     except Exception as e:
         return api_error(current_app.logger, "Password update failed", e)
+
+
+@bp.route("/api/auth/forgot-password", methods=["POST"])
+@limiter.limit("5 per minute")
+@csrf_protect
+def forgot_password():
+    """Start a password reset. Always returns 200 to avoid revealing which emails exist."""
+    try:
+        data = request.json or {}
+        email = data.get("email", "").strip().lower()
+
+        donator = get_donator_by_email(email) if is_valid_email(email) else None
+        if donator:
+            raw_token = secrets.token_urlsafe(32)
+            ttl = current_app.config["PASSWORD_RESET_TTL_MINUTES"]
+            expires_at = datetime.utcnow() + timedelta(minutes=ttl)
+            create_password_reset_token(hash_reset_token(raw_token), donator["id"], expires_at)
+
+            reset_url = f"{current_app.config['DONATE_APP_URL'].rstrip('/')}/reset-password?token={raw_token}"
+            body = (
+                f"Hi {donator['name']},\n\n"
+                "Someone requested a password reset for your Roll4Rights account.\n\n"
+                f"Click the link below to choose a new password (valid for {ttl} minutes):\n"
+                f"{reset_url}\n\n"
+                "If you didn't request this, you can safely ignore this email.\n"
+            )
+            try:
+                send_email(email, "Reset your Roll4Rights password", body)
+            except Exception as mail_err:
+                # Don't fail the request if SMTP is down, but log it.
+                current_app.logger.error(f"Password reset email failed: {mail_err}")
+
+        return jsonify({"message": "If that email is registered, a reset link has been sent."}), 200
+    except Exception as e:
+        return api_error(current_app.logger, "Password reset request failed", e)
+
+
+@bp.route("/api/auth/reset-password", methods=["POST"])
+@limiter.limit("10 per minute")
+@csrf_protect
+def reset_password():
+    """Complete a reset using a valid, unused, unexpired token."""
+    try:
+        data = request.json or {}
+        token = data.get("token", "").strip()
+        new_password = data.get("new_password", "")
+
+        if not token or not new_password:
+            return jsonify({"error": "Token and new password are required"}), 400
+        if len(new_password) < 8:
+            return jsonify({"error": "Password must be at least 8 characters"}), 400
+
+        record = get_password_reset_token(hash_reset_token(token))
+        if not record or record["used_at"] is not None or record["expires_at"] < datetime.utcnow():
+            return jsonify({"error": "This reset link is invalid or has expired"}), 400
+
+        set_donator_password(record["donator_id"], generate_password_hash(new_password))
+        mark_password_reset_used(hash_reset_token(token))
+        return jsonify({"message": "Password updated"}), 200
+    except Exception as e:
+        return api_error(current_app.logger, "Password reset failed", e)
+
+
+@bp.route("/api/auth/reset-password/validate", methods=["GET"])
+@limiter.limit("30 per minute")
+def validate_reset_token():
+    """Let the reset page check a token before prompting for a new password."""
+    try:
+        token = request.args.get("token", "").strip()
+        if not token:
+            return jsonify({"valid": False}), 200
+
+        record = get_password_reset_token(hash_reset_token(token))
+        valid = bool(record and record["used_at"] is None and record["expires_at"] >= datetime.utcnow())
+        return jsonify({"valid": valid}), 200
+    except Exception as e:
+        current_app.logger.error(f"Reset token validation failed: {e}")
+        return jsonify({"valid": False}), 200

@@ -1,6 +1,7 @@
 import psycopg2
 import psycopg2.extras
 from psycopg2 import pool as pg_pool
+import hashlib
 import os
 import secrets
 
@@ -95,6 +96,71 @@ def mark_invite_used(code):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("UPDATE invite_codes SET used_at = NOW() WHERE code = %s", (code,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# ============= PASSWORD RESET TOKENS =============
+
+
+def hash_reset_token(token):
+    """Store a digest of the token, never the raw value (email can be intercepted)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def init_password_reset_table():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id SERIAL PRIMARY KEY,
+            token_hash TEXT UNIQUE NOT NULL,
+            donator_id INTEGER NOT NULL REFERENCES donators(id) ON DELETE CASCADE,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def create_password_reset_token(token_hash, donator_id, expires_at):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # A new token invalidates any outstanding ones for the same account.
+    cur.execute(
+        "UPDATE password_reset_tokens SET used_at = NOW() WHERE donator_id = %s AND used_at IS NULL",
+        (donator_id,),
+    )
+    cur.execute(
+        "INSERT INTO password_reset_tokens (token_hash, donator_id, expires_at) VALUES (%s, %s, %s)",
+        (token_hash, donator_id, expires_at),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_password_reset_token(token_hash):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, donator_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = %s",
+        (token_hash,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def mark_password_reset_used(token_hash):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = %s", (token_hash,))
     conn.commit()
     cur.close()
     conn.close()
@@ -216,6 +282,15 @@ def get_donator_by_email(email):
     cur.close()
     conn.close()
     return row
+
+
+def set_donator_password(donator_id, password_hash):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE donators SET password_hash = %s WHERE id = %s", (password_hash, donator_id))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def set_donator_admin_status(email, is_admin):
