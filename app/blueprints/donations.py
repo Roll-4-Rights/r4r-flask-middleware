@@ -73,11 +73,11 @@ def donation_write_operations(record_id):
     if error:
         return error
 
-    if record.get("Item Status") != "Submitted":
+    if record.get("Item Status") not in ("Submitted", "Rejected"):
         return jsonify(
             {
                 "error": (
-                    "This item has already been reviewed and can no longer be edited directly. "
+                    "This item has been accepted and can no longer be edited here. "
                     "Contact an admin if changes are needed."
                 ),
             }
@@ -85,5 +85,7 @@ def donation_write_operations(record_id):
 
     if request.method == "PATCH":
         body = pick_allowed_fields(request.json or {}, DONATION_WRITABLE_FIELDS)
+        if record.get("Item Status") == "Rejected":    # If the item was rejected, allow the user to resubmit it, which sets the status back to "Submitted in NOCO"
+            body["Item Status"] = "Submitted" 
         return as_flask_response(write_record_by_id(DONATIONS_TABLE, record_id, "PATCH", body))
     return as_flask_response(write_record_by_id(DONATIONS_TABLE, record_id, "DELETE"))
