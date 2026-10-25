@@ -64,6 +64,10 @@ def update_tracking_number(record_id):
     return as_flask_response(nocodb_patch(DONATIONS_TABLE, body))
 
 
+
+
+
+
 @bp.route("/api/donations/<record_id>/listing-review", methods=["PATCH"])
 @donator_required
 @csrf_protect
@@ -88,13 +92,17 @@ def update_listing_review(record_id):
     if "Listing Verified" in data:
         body["Listing Verified"] = bool(data["Listing Verified"])
     if "Fix Notes" in data:
-        # Cap the note so a stray giant paste can't bloat the record
-        body["Fix Notes"] = str(data["Fix Notes"])[:1000]
+        body["Fix Notes"] = str(data["Fix Notes"])[:5000]
+        body["Listing Verified"] = False  # If the donator is sending notes back, mark the listing as not verified
 
     if len(body) == 1:
         return jsonify({"error": "Nothing to update"}), 400
 
     return as_flask_response(nocodb_patch(DONATIONS_TABLE, body))
+
+
+
+
 
 
 @bp.route("/api/donations/<record_id>", methods=["PATCH", "DELETE"])
