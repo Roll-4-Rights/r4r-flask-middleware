@@ -91,6 +91,7 @@ def update_listing_review(record_id):
 
     if "Listing Verified" in data:
         body["Listing Verified"] = bool(data["Listing Verified"])
+        body["Fix Notes"] = None  # Clear any existing fix notes if the donator is approving the listing
     if "Fix Notes" in data:
         body["Fix Notes"] = str(data["Fix Notes"])[:5000]
         body["Listing Verified"] = False  # If the donator is sending notes back, mark the listing as not verified
