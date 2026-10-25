@@ -64,6 +64,39 @@ def update_tracking_number(record_id):
     return as_flask_response(nocodb_patch(DONATIONS_TABLE, body))
 
 
+@bp.route("/api/donations/<record_id>/listing-review", methods=["PATCH"])
+@donator_required
+@csrf_protect
+@handle_route_errors("Failed to update listing review")
+def update_listing_review(record_id):
+    """Let a donator approve a created listing or send notes back to the editor.
+
+    Kept separate from the general PATCH route because that one is intentionally
+    locked once an item leaves the Submitted/Rejected stage, while listing review
+    only happens after a listing exists.
+    """
+    record, error = get_owned_donation(record_id, current_user.email)
+    if error:
+        return error
+
+    if not record.get("Send Listing for Verification"):
+        return jsonify({"error": "This listing has not been sent for verification yet"}), 400
+
+    data = request.json or {}
+    body = {"Id": int(record_id)}
+
+    if "Listing Verified" in data:
+        body["Listing Verified"] = bool(data["Listing Verified"])
+    if "Fix Notes" in data:
+        # Cap the note so a stray giant paste can't bloat the record
+        body["Fix Notes"] = str(data["Fix Notes"])[:1000]
+
+    if len(body) == 1:
+        return jsonify({"error": "Nothing to update"}), 400
+
+    return as_flask_response(nocodb_patch(DONATIONS_TABLE, body))
+
+
 @bp.route("/api/donations/<record_id>", methods=["PATCH", "DELETE"])
 @donator_required
 @csrf_protect
