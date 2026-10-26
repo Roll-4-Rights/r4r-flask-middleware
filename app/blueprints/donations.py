@@ -90,11 +90,13 @@ def update_listing_review(record_id):
     body = {"Id": int(record_id)}
 
     if "Listing Verified" in data:
-        body["Listing Verified"] = bool(data["Listing Verified"])
+        # If the donator approves the listing, mark it as verified and clear any fix notes
+        body["Listing Verified"] = bool(data["Listing Verified"]) 
         body["Fix Notes"] = None  # Clear any existing fix notes if the donator is approving the listing
     if "Fix Notes" in data:
-        body["Fix Notes"] = str(data["Fix Notes"])[:5000]
-        body["Listing Verified"] = False  # If the donator is sending notes back, mark the listing as not verified
+        # If the donator is sending notes back, store them and mark the listing as needing to be resent, but don't change the Listing Verified status, which will remain False until the donator approves it, this also sets the frontend to show "Changes Pending" until the editor resubmits the listing for verification, at which point the donator can approve it or send more notes back
+        body["Fix Notes"] = str(data["Fix Notes"])[:5000] # Limit to 5000 characters to prevent abuse, this is a generous limit
+        body["Send Listing for Verification"] = False  # If the donator is sending notes back, mark the listing as needing to be resent
 
     if len(body) == 1:
         return jsonify({"error": "Nothing to update"}), 400
