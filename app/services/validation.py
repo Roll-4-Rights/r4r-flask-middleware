@@ -12,6 +12,9 @@ DONATION_WRITABLE_FIELDS = frozenset(
         "Recommended Price",
         "Photos",
         "Donator",
+        "Shipping Type",
+        "Estimated Shipping Cost",
+        "Winner Payment Method",
     }
 )
 
@@ -21,9 +24,6 @@ PROFILE_WRITABLE_FIELDS = frozenset(
         "Wares Description",
         "Location",
         "Website",
-        "Shipping Type",
-        "Estimated Shipping Cost",
-        "Winner Payment Method",
         "Shipping Countries",
     }
 )

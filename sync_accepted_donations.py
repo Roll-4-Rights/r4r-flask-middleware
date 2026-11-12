@@ -74,9 +74,10 @@ def sync_accepted_donations():
             'Starting Bid': donation.get('Starting Bid Price'),
             'Photos': donation.get('Photos'),
             'Location': profile.get('Location'),
-            'Shipping Type': profile.get('Shipping Type'),
-            'Estimated Shipping Cost': profile.get('Estimated Shipping Cost'),
-            'Shipping Countries': profile.get('Shipping Countries')
+            'Shipping Type': donation.get('Shipping Type'),
+            'Estimated Shipping Cost': donation.get('Estimated Shipping Cost'),
+            'Shipping Countries': profile.get('Shipping Countries'),
+            'Winner Payment Method': donation.get('Winner Payment Method')
         }
 
         if existing_records:
