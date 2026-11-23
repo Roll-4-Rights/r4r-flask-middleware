@@ -4,7 +4,7 @@ from flask_login import current_user
 from app.decorators import csrf_protect, donator_required
 from app.services.donations import get_owned_donation
 from app.services.errors import handle_route_errors
-from app.services.nocodb import as_flask_response, nocodb_get, nocodb_patch, nocodb_post, write_record_by_id
+from app.services.nocodb import as_flask_response, nocodb_list_all, nocodb_patch, nocodb_post, write_record_by_id
 from app.services.validation import DONATION_WRITABLE_FIELDS, nocodb_eq_filter, pick_allowed_fields
 from db import get_next_lot_number
 
@@ -18,7 +18,10 @@ DONATIONS_TABLE = "Donations and Tracking"
 def get_donations():
     params = dict(request.args)
     params["where"] = nocodb_eq_filter("Donator Email", current_user.email)
-    return as_flask_response(nocodb_get(DONATIONS_TABLE, **params))
+    params.setdefault("sort", "-Id")
+    params.pop("limit", None)
+    params.pop("offset", None)
+    return jsonify(nocodb_list_all(DONATIONS_TABLE, **params))
 
 
 @bp.route("/api/donations", methods=["POST"])
