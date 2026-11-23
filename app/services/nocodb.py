@@ -66,6 +66,30 @@ def nocodb_list(table_name, **params):
     return extract_records(nocodb_get(table_name, **params).json())
 
 
+def nocodb_list_all(table_name, page_size=1000, max_pages=50, **params):
+    """Fetch every page from NocoDB and return one flat list of records."""
+    records = []
+    offset = 0
+
+    for _ in range(max_pages):
+        data = nocodb_get(table_name, **{**params, "limit": page_size, "offset": offset}).json()
+
+        batch = extract_records(data)
+        if not batch:
+            break
+        records.extend(batch)
+
+        info = (data.get("pageInfo") or {}) if isinstance(data, dict) else {}
+        if info.get("isLastPage"):
+            break
+        if not info and len(batch) < page_size:
+            break
+
+        offset += info.get("pageSize") or len(batch)
+
+    return records
+
+
 def nocodb_upload_files(files_data):
     return requests.post(nocodb_storage_upload_url(), headers=nocodb_token_header(), files=files_data)
 
