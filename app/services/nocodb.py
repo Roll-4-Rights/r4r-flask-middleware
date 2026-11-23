@@ -65,15 +65,14 @@ def nocodb_delete(table_name, record_id):
 def nocodb_list(table_name, **params):
     return extract_records(nocodb_get(table_name, **params).json())
 
+
 def nocodb_list_all(table_name, page_size=1000, max_pages=50, **params):
     """Fetch every page from NocoDB and return one flat list of records."""
     records = []
     offset = 0
 
     for _ in range(max_pages):
-        data = nocodb_get(
-            table_name, **{**params, "limit": page_size, "offset": offset}
-        ).json()
+        data = nocodb_get(table_name, **{**params, "limit": page_size, "offset": offset}).json()
 
         batch = extract_records(data)
         if not batch:

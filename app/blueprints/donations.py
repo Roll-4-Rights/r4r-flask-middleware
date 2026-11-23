@@ -67,10 +67,6 @@ def update_tracking_number(record_id):
     return as_flask_response(nocodb_patch(DONATIONS_TABLE, body))
 
 
-
-
-
-
 @bp.route("/api/donations/<record_id>/listing-review", methods=["PATCH"])
 @donator_required
 @csrf_protect
@@ -94,21 +90,21 @@ def update_listing_review(record_id):
 
     if "Listing Verified" in data:
         # If the donator approves the listing, mark it as verified and clear any fix notes
-        body["Listing Verified"] = bool(data["Listing Verified"]) 
+        body["Listing Verified"] = bool(data["Listing Verified"])
         body["Fix Notes"] = None  # Clear any existing fix notes if the donator is approving the listing
     if "Fix Notes" in data:
         # If the donator is sending notes back, store them and mark the listing as needing to be resent, but don't change the Listing Verified status, which will remain False until the donator approves it, this also sets the frontend to show "Changes Pending" until the editor resubmits the listing for verification, at which point the donator can approve it or send more notes back
-        body["Fix Notes"] = str(data["Fix Notes"])[:5000] # Limit to 5000 characters to prevent abuse, this is a generous limit
-        body["Send Listing for Verification"] = False  # If the donator is sending notes back, mark the listing as needing to be resent
+        body["Fix Notes"] = str(data["Fix Notes"])[
+            :5000
+        ]  # Limit to 5000 characters to prevent abuse, this is a generous limit
+        body["Send Listing for Verification"] = (
+            False  # If the donator is sending notes back, mark the listing as needing to be resent
+        )
 
     if len(body) == 1:
         return jsonify({"error": "Nothing to update"}), 400
 
     return as_flask_response(nocodb_patch(DONATIONS_TABLE, body))
-
-
-
-
 
 
 @bp.route("/api/donations/<record_id>", methods=["PATCH", "DELETE"])
@@ -132,7 +128,9 @@ def donation_write_operations(record_id):
 
     if request.method == "PATCH":
         body = pick_allowed_fields(request.json or {}, DONATION_WRITABLE_FIELDS)
-        if record.get("Item Status") == "Rejected":    # If the item was rejected, allow the user to resubmit it, which sets the status back to "Submitted in NOCO"
-            body["Item Status"] = "Submitted" 
+        if (
+            record.get("Item Status") == "Rejected"
+        ):  # If the item was rejected, allow the user to resubmit it, which sets the status back to "Submitted in NOCO"
+            body["Item Status"] = "Submitted"
         return as_flask_response(write_record_by_id(DONATIONS_TABLE, record_id, "PATCH", body))
     return as_flask_response(write_record_by_id(DONATIONS_TABLE, record_id, "DELETE"))
