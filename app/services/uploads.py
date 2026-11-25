@@ -13,6 +13,14 @@ ALLOWED_IMAGE_MIMES = frozenset(
     }
 )
 
+ALLOWED_VIDEO_MIMES = frozenset(
+    {
+        "video/mp4",
+        "video/webm",
+        "video/quicktime",
+    }
+)
+
 
 def validate_image_file(file, max_bytes=None):
     """
@@ -41,6 +49,27 @@ def validate_image_file(file, max_bytes=None):
     except Exception:
         file.stream.seek(0)
         return False, "Invalid image file"
+
+def validate_media_file(file, max_bytes=None):
+    """Validate a donation image or video. Returns (ok, error_message)."""
+    if not file or not file.filename:
+        return False, "No file provided"
+
+    max_bytes = max_bytes or current_app.config.get("MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
+    file.stream.seek(0, 2)
+    size = file.stream.tell()
+    file.stream.seek(0)
+    if size > max_bytes:
+        return False, "File is too large"
+
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if content_type in ALLOWED_VIDEO_MIMES:
+        return True, None
+    if not content_type or content_type in ALLOWED_IMAGE_MIMES:
+        return validate_image_file(file, max_bytes=max_bytes)
+
+    return False, "Only images and MP4, WebM, or MOV videos are allowed"
+
 
 
 def save_profile_image(file):

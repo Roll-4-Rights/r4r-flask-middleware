@@ -1,6 +1,5 @@
 import os
 
-from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
 
@@ -17,8 +16,6 @@ from db import (
     init_password_reset_table,
     init_winner_claims_table,
 )
-
-load_dotenv()
 
 
 def create_app():

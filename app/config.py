@@ -1,5 +1,9 @@
 import os
 from datetime import timedelta
+from datetime import timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # NocoDB table name -> environment variable holding the table ID
 TABLE_ID_ENV_VARS = {
@@ -57,7 +61,7 @@ class Config:
 
     ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     MAX_IMAGE_DIMENSION = 1024
-    MAX_CONTENT_LENGTH = 1024 * 1024 * 1024  # 1 GB
+    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 6 * 1024 * 1024 * 1024))
     MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 10 * 1024 * 1024))
 
     RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
