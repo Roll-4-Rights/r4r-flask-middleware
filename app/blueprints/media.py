@@ -6,7 +6,7 @@ from app.decorators import csrf_protect, donator_required
 from app.services.errors import handle_route_errors
 from app.services.media import donator_owns_media_path
 from app.services.nocodb import nocodb_token_header, nocodb_upload_files
-from app.services.uploads import validate_image_file
+from app.services.uploads import validate_media_file
 
 bp = Blueprint("media", __name__)
 
@@ -31,7 +31,7 @@ def _upload_files():
 
     files_data = []
     for file in request.files.getlist("file"):
-        ok, error = validate_image_file(file)
+        ok, error = validate_media_file(file)
         if not ok:
             return jsonify({"error": error}), 400
         files_data.append(("file", (file.filename, file.stream, file.content_type)))
