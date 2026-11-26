@@ -5,6 +5,7 @@
 # so the same request is not sent again on every run.
 
 import os
+import sys
 from html import escape
 
 import requests
@@ -177,8 +178,47 @@ def send_pending_verification_emails():
     print(f'Verification email check done: {sent} sent.')
 
 
+def preview_pending_emails():
+    """Show what would be emailed without sending anything or changing markers."""
+    records = fetch_records(f'({REQUEST_FIELD},eq,true)')
+    marked_ids = get_verification_email_donation_ids()
+    would_send = [record for record in records if record['Id'] not in marked_ids]
+
+    print(f'{len(would_send)} of {len(records)} checked row(s) would be emailed:')
+    for record in would_send:
+        address = record.get(EMAIL_FIELD) or '(no email)'
+        print(f'  donation {record["Id"]} -> {address}')
+    print('Dry run: no emails sent and no markers changed.')
+
+
+def seed_existing_requests():
+    """Mark currently checked rows as already handled, without emailing anyone."""
+    records = fetch_records(f'({REQUEST_FIELD},eq,true)')
+    marked_ids = get_verification_email_donation_ids()
+    added = 0
+
+    for record in records:
+        record_id = record['Id']
+        if record_id in marked_ids:
+            continue
+        mark_verification_email_sent(record_id)
+        marked_ids.add(record_id)
+        added += 1
+
+    print(f'Seeded {added} existing checked row(s) as already emailed; no email sent.')
+
+
 def main():
     init_verification_email_table()
+
+    if '--dry-run' in sys.argv:
+        preview_pending_emails()
+        return
+
+    if '--seed-existing' in sys.argv:
+        seed_existing_requests()
+        return
+
     clear_stale_markers()
     send_pending_verification_emails()
 

@@ -179,6 +179,8 @@ Run via Coolify scheduled tasks or cron:
 | `sync_accepted_donations.py` | Creates/updates NocoDB auction listings when a donation is marked Accepted |
 | `notify_listing_verification.py` | Emails contributors when a listing is sent for verification; keeps the one-time marker in Postgres |
 
+Before enabling the verification-email schedule on an existing table, run `python notify_listing_verification.py --seed-existing` once so already-checked rows are not emailed. Use `python notify_listing_verification.py --dry-run` to preview without sending.
+
 ## Scripts
 
 The `scripts/` directory contains one-off utilities for NocoDB table setup and migration. These are run manually during initial setup or schema changes — not part of the running service.
