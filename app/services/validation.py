@@ -25,6 +25,7 @@ PROFILE_WRITABLE_FIELDS = frozenset(
         "Location",
         "Website",
         "Shipping Countries",
+        "Shipping Countries (Grid)",
     }
 )
 
