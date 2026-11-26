@@ -14,6 +14,7 @@ from db import (
     init_donators_table,
     init_lot_counter,
     init_password_reset_table,
+    init_verification_email_table,
     init_winner_claims_table,
 )
 
@@ -47,6 +48,7 @@ def create_app():
     init_bidder_login_links_table()
     init_winner_claims_table()
     init_password_reset_table()
+    init_verification_email_table()
 
     CORS(app, supports_credentials=True, origins=app.config["ALLOWED_ORIGINS"])
     app.config["RATELIMIT_STORAGE_URI"] = app.config["RATELIMIT_STORAGE_URI"]

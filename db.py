@@ -532,3 +532,57 @@ def get_forfeited_bidder_ids_for_item(item_id):
     cur.close()
     conn.close()
     return ids
+
+
+# ============= LISTING VERIFICATION EMAILS =============
+
+
+def init_verification_email_table():
+    """Small internal marker for verification emails — not a NocoDB column."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS verification_email_notifications (
+            donation_id INTEGER PRIMARY KEY,
+            emailed_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_verification_email_donation_ids():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT donation_id FROM verification_email_notifications")
+    ids = {row["donation_id"] for row in cur.fetchall()}
+    cur.close()
+    conn.close()
+    return ids
+
+
+def mark_verification_email_sent(donation_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO verification_email_notifications (donation_id)
+        VALUES (%s)
+        ON CONFLICT (donation_id) DO UPDATE SET emailed_at = NOW()
+    """, (int(donation_id),))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def clear_verification_email_sent(donation_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM verification_email_notifications WHERE donation_id = %s",
+        (int(donation_id),),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
