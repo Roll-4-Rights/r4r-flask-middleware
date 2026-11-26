@@ -4,6 +4,7 @@ from flask_login import current_user
 from app.decorators import csrf_protect, donator_required
 from app.services.errors import handle_route_errors
 from app.services.nocodb import as_flask_response, list_for_field, nocodb_post
+from datetime import datetime, timezone
 
 bp = Blueprint("messages", __name__)
 
@@ -39,5 +40,6 @@ def send_message():
         "Donator Email": current_user.email,
         "Donator Name": current_user.name,
         "Status": "New",
+        "Created At": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     return as_flask_response(nocodb_post("Donator Messages", payload))
