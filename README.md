@@ -177,7 +177,7 @@ Run via Coolify scheduled tasks or cron:
 | Script | Purpose |
 |---|---|
 | `sync_accepted_donations.py` | Creates/updates NocoDB auction listings when a donation is marked Accepted |
-| `notify_listing_verification.py` | Emails contributors when a listing is sent for verification, then marks it notified |
+| `notify_listing_verification.py` | Emails contributors when a listing is sent for verification; keeps the one-time marker in Postgres |
 
 ## Scripts
 

@@ -1,8 +1,8 @@
 # notify_listing_verification.py — run periodically via Coolify's Scheduled Tasks
 # on this resource, since NocoDB's automation feature isn't available on this
 # instance's tier. Emails a contributor when an editor ticks "Send Listing for
-# Verification", then ticks a one-time "Verification Email Sent" checkbox so the
-# same request is not emailed again on every run.
+# Verification". A small Postgres table remembers which requests were emailed,
+# so the same request is not sent again on every run.
 
 import os
 from html import escape
@@ -12,6 +12,12 @@ from dotenv import load_dotenv
 
 from app.config import Config
 from app.services.email import send_email
+from db import (
+    clear_verification_email_sent,
+    get_verification_email_donation_ids,
+    init_verification_email_table,
+    mark_verification_email_sent,
+)
 
 load_dotenv()
 
@@ -25,30 +31,24 @@ if not NOCODB_TOKEN:
 
 TABLE_NAME = 'Donations and Tracking'
 REQUEST_FIELD = 'Send Listing for Verification'
-SENT_FIELD = 'Verification Email Sent'
 EMAIL_FIELD = 'Donator Email'
 NAME_FIELD = 'Donator'
 ITEM_FIELD = 'Item Name'
 
 
-def nocodb_records_url(table_name, record_id=None):
-    table_id = TABLE_IDS[table_name]
-    base = f'{NOCODB_URL}/api/v2/tables/{table_id}/records'
-    return f'{base}/{record_id}' if record_id else base
+def nocodb_records_url():
+    table_id = TABLE_IDS[TABLE_NAME]
+    return f'{NOCODB_URL}/api/v2/tables/{table_id}/records'
 
 
 def read_headers():
     return {'xc-token': NOCODB_TOKEN}
 
 
-def write_headers():
-    return {'xc-token': NOCODB_TOKEN, 'Content-Type': 'application/json'}
-
-
 def fetch_records(where_clause):
     """Fetch up to 1000 rows matching a NocoDB v2 where clause."""
     response = requests.get(
-        nocodb_records_url(TABLE_NAME),
+        nocodb_records_url(),
         headers=read_headers(),
         params={'limit': 1000, 'where': where_clause},
     )
@@ -57,14 +57,26 @@ def fetch_records(where_clause):
     return data.get('list', []) if isinstance(data, dict) else data
 
 
-def patch_record(record_id, fields):
-    """Patch one row. NocoDB v2 identifies the row by Id in the JSON body."""
-    response = requests.patch(
-        nocodb_records_url(TABLE_NAME),
-        headers=write_headers(),
-        json={'Id': record_id, **fields},
-    )
-    return response.status_code in (200, 201), response
+def fetch_all_records():
+    """Fetch every donation row, a page at a time, for marker cleanup."""
+    records = []
+    offset = 0
+
+    while True:
+        response = requests.get(
+            nocodb_records_url(),
+            headers=read_headers(),
+            params={'limit': 1000, 'offset': offset},
+        )
+        response.raise_for_status()
+        data = response.json()
+        page = data.get('list', []) if isinstance(data, dict) else data
+        records.extend(page)
+        if len(page) < 1000:
+            break
+        offset += 1000
+
+    return records
 
 
 def build_email_bodies(record):
@@ -113,39 +125,35 @@ def build_email_bodies(record):
     return body_text, body_html
 
 
-def clear_stale_sent_flags():
-    """Safety net: clear the marker if verification is no longer requested."""
-    records = fetch_records(f'({SENT_FIELD},eq,true)')
-    cleared = 0
+def clear_stale_markers():
+    """Drop Postgres markers for rows no longer waiting on verification."""
+    marked_ids = get_verification_email_donation_ids()
+    if not marked_ids:
+        print('Verification marker check done: 0 cleared.')
+        return
 
-    for record in records:
-        if record.get(REQUEST_FIELD):
-            continue
+    records = fetch_all_records()
+    still_requested = {record['Id'] for record in records if record.get(REQUEST_FIELD)}
+    stale_ids = marked_ids - still_requested
 
-        record_id = record['Id']
-        ok, response = patch_record(record_id, {SENT_FIELD: False})
-        if ok:
-            cleared += 1
-            print(f'Cleared stale verification email flag on donation {record_id}')
-        else:
-            print(
-                f'FAILED to clear flag on donation {record_id}: '
-                f'{response.status_code} {response.text}'
-            )
+    for donation_id in sorted(stale_ids):
+        clear_verification_email_sent(donation_id)
+        print(f'Cleared stale verification marker for donation {donation_id}')
 
-    print(f'Stale flag check done: {cleared} cleared.')
+    print(f'Verification marker check done: {len(stale_ids)} cleared.')
 
 
 def send_pending_verification_emails():
     """Email each pending verification request exactly once."""
     records = fetch_records(f'({REQUEST_FIELD},eq,true)')
+    marked_ids = get_verification_email_donation_ids()
     sent = 0
 
     for record in records:
-        if record.get(SENT_FIELD):
+        record_id = record['Id']
+        if record_id in marked_ids:
             continue
 
-        record_id = record['Id']
         to_address = (record.get(EMAIL_FIELD) or '').strip()
         if not to_address:
             print(f'Warning: donation {record_id} has no {EMAIL_FIELD}; skipping.')
@@ -161,23 +169,17 @@ def send_pending_verification_emails():
             print(f'FAILED to email {to_address} for donation {record_id}: {exc}')
             continue
 
-        ok, response = patch_record(record_id, {SENT_FIELD: True})
-        if ok:
-            sent += 1
-            print(f'Emailed {to_address} about donation {record_id}')
-        else:
-            # The flag stays false, so a later run may retry. That is preferable
-            # to silently losing the email if the NocoDB patch failed.
-            print(
-                f'Email sent but FAILED to mark donation {record_id}: '
-                f'{response.status_code} {response.text}'
-            )
+        mark_verification_email_sent(record_id)
+        marked_ids.add(record_id)
+        sent += 1
+        print(f'Emailed {to_address} about donation {record_id}')
 
     print(f'Verification email check done: {sent} sent.')
 
 
 def main():
-    clear_stale_sent_flags()
+    init_verification_email_table()
+    clear_stale_markers()
     send_pending_verification_emails()
 
 
