@@ -1,5 +1,6 @@
 import os
 import smtplib
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from flask import current_app, has_app_context
@@ -24,9 +25,14 @@ def _smtp_settings():
     }
 
 
-def send_email(to_address, subject, body_text):
+def send_email(to_address, subject, body_text, body_html=None):
     settings = _smtp_settings()
-    msg = MIMEText(body_text)
+    if body_html:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body_text, "plain"))
+        msg.attach(MIMEText(body_html, "html"))
+    else:
+        msg = MIMEText(body_text)
     msg["Subject"] = subject
     msg["From"] = settings["from"]
     msg["To"] = to_address

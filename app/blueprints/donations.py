@@ -6,7 +6,7 @@ from app.services.donations import get_owned_donation
 from app.services.errors import handle_route_errors
 from app.services.nocodb import as_flask_response, nocodb_list_all, nocodb_patch, nocodb_post, write_record_by_id
 from app.services.validation import DONATION_WRITABLE_FIELDS, nocodb_eq_filter, pick_allowed_fields
-from db import get_next_lot_number
+from db import clear_verification_email_sent, get_next_lot_number
 
 bp = Blueprint("donations", __name__)
 DONATIONS_TABLE = "Donations and Tracking"
@@ -100,6 +100,8 @@ def update_listing_review(record_id):
         body["Send Listing for Verification"] = (
             False  # If the donator is sending notes back, mark the listing as needing to be resent
         )
+        # Clear the Postgres marker so the next editor re-submission emails them again.
+        clear_verification_email_sent(record_id)
 
     if len(body) == 1:
         return jsonify({"error": "Nothing to update"}), 400
