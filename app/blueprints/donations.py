@@ -100,6 +100,8 @@ def update_listing_review(record_id):
         body["Send Listing for Verification"] = (
             False  # If the donator is sending notes back, mark the listing as needing to be resent
         )
+        # Reset the one-time email marker so the next editor re-submission emails them again.
+        body["Verification Email Sent"] = False
 
     if len(body) == 1:
         return jsonify({"error": "Nothing to update"}), 400
